@@ -1,0 +1,803 @@
+/* =========================================================
+   TSS Design System — tokens
+   ========================================================= */
+:root{
+  /* Brand */
+  --brand-red:      #C90C0F;
+  --brand-red-dark: #A80A0C;
+  --brand-coral:    #ea694f;
+  --brand-coral-dk: #D24E34;
+  --brand-mint:     #B1F1A7;
+  --brand-cream:    #F8EFC6;
+  --brand-forest:   #458553;
+
+  /* Warm-tinted neutral scale */
+  --n-0:   oklch(0.995 0.004 70);
+  --n-50:  oklch(0.975 0.006 70);
+  --n-100: oklch(0.955 0.008 68);
+  --n-200: oklch(0.910 0.010 62);
+  --n-300: oklch(0.850 0.012 58);
+  --n-400: oklch(0.700 0.014 52);
+  --n-500: oklch(0.570 0.014 48);
+  --n-600: oklch(0.470 0.013 46);
+  --n-700: oklch(0.375 0.012 44);
+  --n-800: oklch(0.265 0.011 44);
+  --n-900: oklch(0.185 0.010 44);
+
+  /* Radius */
+  --r-input: 6px;
+  --r-card:  10px;
+  --r-large: 16px;
+  --r-pill:  9999px;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px oklch(0.185 0.010 44 / 0.08), 0 1px 3px oklch(0.185 0.010 44 / 0.06);
+  --shadow-md: 0 4px 12px oklch(0.185 0.010 44 / 0.12), 0 2px 4px oklch(0.185 0.010 44 / 0.08);
+
+  --t: 0.15s ease;
+}
+
+*{ box-sizing: border-box; }
+
+/* Tüm interaktif elemanlar için tek tip focus state: tarayıcı varsayılanı
+   (mavi outline) yerine marka kırmızısı. .input kendi box-shadow halkasını
+   kullandığı için outline'ı kapatıyor; diğer her şey (buton, checkbox,
+   link vb.) bu genel kuraldan besleniyor. */
+:focus-visible{ outline: 2px solid var(--brand-red); outline-offset: 2px; }
+
+/* [hidden] her zaman kazanmalı: .modal-backdrop / .overlay display:flex
+   tanımları, tarayıcının varsayılan [hidden] kuralını geçersiz kılıyordu. */
+[hidden]{ display: none !important; }
+
+html, body{ height: 100%; }
+
+body{
+  margin: 0;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--n-800);
+  background: var(--n-100);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+h2, h3{ margin: 0; font-weight: 700; }
+
+/* =========================================================
+   Header
+   ========================================================= */
+.app-header{
+  flex: 0 0 auto;
+  height: 56px;
+  background: var(--brand-red);
+  color: var(--n-0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+}
+.brand{ display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-logo{ height: 220px; width: auto; display: block; }
+.brand-fallback{ font-weight: 800; font-size: 15px; letter-spacing: 0.01em; }
+.brand-divider{ width: 1px; height: 20px; background: rgba(255,255,255,0.35); }
+.brand-product{ font-weight: 600; font-size: 14px; color: rgba(255,255,255,0.92); }
+.header-actions{ display: flex; gap: 8px; }
+
+/* =========================================================
+   Layout
+   ========================================================= */
+.app-body{
+  flex: 1 1 auto;
+  display: grid;
+  /* Sefer Planı sabit kalıyor; harita ve rota tablosu kalan alanı eşit
+     paylaşıyor (1fr / 1fr). */
+  grid-template-columns: 340px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  min-height: 0;
+}
+
+.panel{
+  background: var(--n-0);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panel-header{
+  flex: 0 0 auto;
+  padding: 32px 16px 20px;
+  border-bottom: 1px solid var(--n-200);
+}
+.panel-header-row{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-title{ font-size: 15px; font-weight: 700; color: var(--n-900); }
+.panel-sub{ margin: 2px 0 0; font-size: 12px; color: var(--n-500); }
+
+.panel-scroll{
+  flex: 1 1 auto;
+  /* auto değil scroll: içerik taşmadığında da scrollbar için yer ayrılsın,
+     "scrollbar-gutter: stable" ile birlikte davranışı garanti altına alır
+     (o özelliği desteklemeyen bir motorda bile jank kalmaz). */
+  overflow-y: scroll;
+  padding: 26px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.panel-footer{
+  flex: 0 0 auto;
+  padding: 16px 16px 20px;
+  border-top: 1px solid var(--n-200);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--n-50);
+  border-radius: 0 0 var(--r-card) var(--r-card);
+}
+
+/* İki eylemi (ör. Rotayı Favorilere Ekle + Rotayı Onayla) eşit genişlikte
+   yan yana dizmek için — panel footer'da ve modallerde kullanılıyor. */
+.btn-row{ display: flex; gap: 8px; }
+.btn-row .btn{ flex: 1 1 0; }
+
+.panel-map{ overflow: hidden; }
+.map-canvas{ flex: 1 1 auto; min-height: 0; background: var(--n-100); }
+
+/* =========================================================
+   Form elements
+   ========================================================= */
+.field-group{ display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.field-row{ display: grid; grid-template-columns: 1fr; gap: 12px; }
+.field-row-3{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.field-actions{ justify-content: flex-end; }
+
+.label{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-700);
+}
+.label-sm{ font-size: 11px; }
+
+/* .input onlarca farklı alanda (sol panel + 2 modal, text/number/time/select)
+   ortak kullanılıyor. width'i burada sabit bir yüzdeye çekmeyin — her yerde
+   birden bozulur. Kutu genişliğini ebeveyn grid/flex sütunu belirler; boyut
+   farkı gerekiyorsa .input-sm gibi bir modifier ekleyin, width değil. */
+.input{
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--n-900);
+  background: var(--n-0);
+  border: 1px solid var(--n-300);
+  border-radius: var(--r-input);
+  padding: 8px 10px;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.input-sm{ padding: 6px 8px; font-size: 12px; }
+.input:focus{
+  outline: none;
+  border-color: var(--brand-red);
+  box-shadow: 0 0 0 3px oklch(0.55 0.22 27 / 0.14);
+}
+.input:disabled{ background: var(--n-100); color: var(--n-400); }
+select.input{ appearance: none; background-image: none; cursor: pointer; }
+/* Tarayıcının number input'lara eklediği yukarı/aşağı ok (spinner) —
+   özellikle tablo hücreleri gibi dar kutularda sayıyı sıkıştırıp dağınık/
+   düşük kontrastlı gösteriyordu (ör. Araçlar tablosundaki "Kullanılabilir"
+   sütunu). Kaldırıyoruz; artı/eksi zaten +/- tuşlarıyla çalışmaya devam eder. */
+input.input[type="number"]::-webkit-outer-spin-button,
+input.input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance: none;
+  margin: 0;
+}
+input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
+
+/* =========================================================
+   Özel açılır menü (bkz. js/app.js — enhanceSelect)
+   Native <select>'in açık listesi tarayıcı/OS tarafından çizilir ve CSS
+   ile stillenemez (mavi seçili satır vb.) — bu yüzden native <select>
+   sadece değer kaynağı olarak görünmez tutulur; buton + role="listbox"
+   ile tasarım sistemine uygun bir menü gösterilir.
+   ========================================================= */
+.tss-select{ position: relative; }
+.tss-select-native{
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.tss-select-trigger{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.tss-select-trigger:disabled{ cursor: not-allowed; }
+.tss-select-value{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tss-select-caret{
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--n-500);
+  transition: transform var(--t);
+}
+.tss-select-trigger[aria-expanded="true"] .tss-select-caret{ transform: rotate(180deg); }
+
+.tss-select-menu{
+  position: fixed;
+  z-index: 1150;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--n-0);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-300) var(--n-100);
+}
+.tss-select-menu::-webkit-scrollbar{ width: 8px; height: 8px; }
+.tss-select-menu::-webkit-scrollbar-track{ background: var(--n-100); }
+.tss-select-menu::-webkit-scrollbar-thumb{
+  background-color: var(--n-300);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.tss-select-menu::-webkit-scrollbar-thumb:hover{ background-color: var(--n-400); }
+
+.tss-select-option{
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--n-800);
+  border-radius: var(--r-input);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tss-select-menu-sm .tss-select-option{ padding: 6px 8px; font-size: 12px; }
+.tss-select-option.is-active{ background: var(--n-100); }
+.tss-select-option.is-selected{
+  color: var(--brand-red);
+  font-weight: 600;
+  background: oklch(0.55 0.22 27 / 0.08);
+}
+.tss-select-option.is-selected.is-active{ background: oklch(0.55 0.22 27 / 0.12); }
+.tss-select-option[aria-disabled="true"]{ color: var(--n-400); cursor: not-allowed; }
+
+.section-head{ display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.hint{ font-size: 11px; color: var(--n-500); margin: 0; }
+.empty-note{
+  font-size: 12px;
+  color: var(--n-500);
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  border: 1px dashed var(--n-300);
+  border-radius: var(--r-input);
+}
+.inline-error{
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--brand-red);
+}
+
+/* =========================================================
+   Buttons
+   ========================================================= */
+.btn{
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 9px 14px;
+  border-radius: var(--r-card);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: filter var(--t), background-color var(--t), border-color var(--t);
+  white-space: nowrap;
+}
+.btn:disabled{ opacity: 0.45; cursor: not-allowed; }
+.btn:not(:disabled):hover{ filter: brightness(0.94); }
+.btn:focus-visible{ outline: 2px solid var(--brand-red); outline-offset: 2px; }
+
+.btn-primary{ background: var(--brand-red); color: var(--n-0); }
+.btn-secondary{ background: var(--brand-coral); color: var(--n-0); }
+/* Mint çok açık — beyaz yazı okunmaz olurdu, bu yüzden metin forest yeşili
+   (badge-delivery'deki mint+forest ikilisiyle aynı desen). */
+.btn-forest{ background: var(--brand-mint); color: var(--brand-forest); }
+.btn-neutral{ background: var(--n-0); color: var(--n-700); border-color: var(--n-300); }
+/* Modal "Kapat" butonları: dolu kırmızı değil, üzerine gelince kırmızıya
+   dönen ince bir vurgu — kapatma/iptal eylemleri için primary kırmızı
+   ayrılmıyor (bkz. tasarım sistemi: kırmızı yalnızca onay/kaydet eylemlerinde). */
+.btn-neutral[data-close-modal]:hover{ border-color: var(--brand-red); color: var(--brand-red); filter: none; }
+/* Excel butonları: Kapat butonuyla aynı desen — normalde düz nötr,
+   üstüne gelince çerçeve/metin forest yeşiline döner. */
+.btn-excel:not(:disabled):hover{ border-color: var(--brand-forest); color: var(--brand-forest); filter: none; }
+.btn-ghost-light{ background: transparent; color: var(--n-0); border-color: rgba(255,255,255,0.45); }
+.btn-ghost-light:not(:disabled):hover{ background: rgba(255,255,255,0.12); filter: none; }
+/* Kırmızı header üzerinde kırmızı focus ring görünmez olur — bu butonlar
+   için outline'ı beyaza çeviriyoruz, renk hâlâ marka paletinden. */
+.btn-ghost-light:focus-visible{ outline-color: var(--n-0); }
+.btn-block{ width: 100%; }
+.btn-sm{ padding: 6px 10px; font-size: 12px; border-radius: var(--r-input); }
+.btn-icon{
+  background: transparent;
+  border: none;
+  color: var(--n-500);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--r-input);
+}
+.btn-icon:hover{ color: var(--n-800); background: var(--n-100); }
+/* Kırmızı hover sadece yıkıcı/geri alınamaz eylemler (Sil) için — Yükle,
+   Düzenle gibi zararsız eylemlerde kırmızı yanlış bir "tehlike" sinyali. */
+.btn-icon-danger:hover{ color: var(--brand-red); }
+.file-btn{ display: inline-block; cursor: pointer; }
+
+/* =========================================================
+   Capacity meter
+   ========================================================= */
+.capacity{
+  margin-top: 4px;
+  background: var(--n-50);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+  padding: 12px;
+}
+.capacity-head{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.capacity-label{ font-size: 11px; font-weight: 600; color: var(--n-600); }
+.capacity-value{ font-size: 12px; font-weight: 700; color: var(--n-900); }
+.capacity-track{ height: 6px; background: var(--n-200); border-radius: var(--r-pill); overflow: hidden; }
+.capacity-fill{
+  height: 100%;
+  width: 0%;
+  background: var(--brand-forest);
+  border-radius: var(--r-pill);
+  transition: width var(--t), background-color var(--t);
+}
+/* Dolu %5-10 gibi çok dar genişliklerde pill radius'u track'in overflow
+   maskesiyle çakışıp köşeleri kırpıyordu — dolgu varken çubuğun kendi
+   yüksekliği kadar minimum genişlik tanımlayarak kapsülün her zaman tam
+   render olmasını garantiliyoruz. Dolgu yokken (0%) bu min-width uygulanmaz. */
+.capacity-fill.has-fill{ min-width: 6px; }
+.capacity-fill.is-full{ background: var(--brand-coral); }
+
+/* =========================================================
+   Stop list
+   ========================================================= */
+.stop-form{ display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.stop-list{ list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.stop-item{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--n-50);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+  transition: background-color var(--t), border-color var(--t);
+}
+.stop-item:hover{ background: var(--n-100); border-color: var(--n-300); }
+.stop-item-main{ flex: 1 1 auto; min-width: 0; }
+.stop-item-name{
+  font-size: 13px; font-weight: 600; color: var(--n-900);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stop-item-meta{ font-size: 11px; color: var(--n-500); }
+
+/* =========================================================
+   Badges
+   ========================================================= */
+.badge{
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.badge-pickup{ background: var(--brand-cream); color: var(--n-800); }
+.badge-delivery{ background: var(--brand-mint); color: var(--brand-forest); }
+.badge-ok{ background: var(--brand-mint); color: var(--brand-forest); }
+.badge-warn{ background: oklch(0.55 0.22 27 / 0.10); color: var(--brand-red); }
+
+/* =========================================================
+   Hava durumu uyarısı — rotayı değiştirmez, sadece bilgilendirir
+   ========================================================= */
+.weather-warnings{
+  flex: 0 0 auto;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  background: oklch(0.55 0.22 27 / 0.06);
+  border: 1px solid var(--brand-coral);
+  border-left: 3px solid var(--brand-coral);
+  border-radius: var(--r-input);
+}
+.weather-warnings-title{
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brand-coral-dk);
+  margin-bottom: 4px;
+}
+.weather-warning-item{ margin: 2px 0; font-size: 12px; color: var(--n-800); }
+
+/* Filo kapasitesi yetersiz kaldığında (tüm araçlar birleştirilse bile talebi
+   karşılayamıyorsa) gösterilen uyarı — hava durumundan ayırt etmek için
+   marka kırmızısı kullanılıyor (bu gerçek bir kısıt ihlali riski). */
+.fleet-warning{
+  flex: 0 0 auto;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--brand-red-dark);
+  background: oklch(0.55 0.20 25 / 0.07);
+  border: 1px solid var(--brand-red);
+  border-left: 3px solid var(--brand-red);
+  border-radius: var(--r-input);
+}
+
+/* =========================================================
+   Araç grupları (çoklu araç planı) — her araç kendi başlık + KPI +
+   tablosuyla alt alta listelenir. #planGroups, panel içindeki tek
+   kaydırılabilir alan; tekil .plan-group'lar artık kendi başına
+   flex:1 auto olmuyor (o rolü artık #planGroups üstleniyor).
+   ========================================================= */
+#planGroups{
+  flex: 1 1 auto;
+  overflow-y: scroll;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#planGroups:empty{ flex: 0 0 auto; }
+/* Rota henüz hesaplanmamışken #planGroups boş kalıyor ve bu placeholder
+   panel-footer'a kadar kalan boşluğu kaplıyor — aksi halde altta panel
+   kenarlığı/gölgesiyle çelişen boş, tasarlanmamış bir alan kalıyordu. */
+#tableEmpty{
+  flex: 1 1 auto;
+  margin: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+.plan-group{ border-bottom: 1px solid var(--n-200); }
+.plan-group:last-child{ border-bottom: none; }
+.plan-group .table-wrap{ flex: none; overflow: visible; }
+.plan-group .inline-error{ padding: 0 16px 12px; }
+
+.plan-group-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 0;
+}
+.plan-group-title{ display: flex; align-items: center; gap: 8px; }
+.plan-group-swatch{
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.plan-group-title strong{ font-size: 13px; color: var(--n-900); }
+.plan-group-meta{ display: block; font-size: 11px; color: var(--n-500); margin-top: 1px; }
+.plan-group-swap{ display: flex; align-items: center; gap: 6px; }
+.plan-group-swap .label{ margin: 0; white-space: nowrap; }
+.plan-group-swap .input{ min-width: 170px; }
+
+/* =========================================================
+   Summary
+   ========================================================= */
+.summary{
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--n-200);
+}
+.summary-card{
+  background: var(--n-50);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.summary-label{ font-size: 10px; font-weight: 600; color: var(--n-500); text-transform: uppercase; letter-spacing: 0.03em; }
+.summary-value{ font-size: 15px; font-weight: 700; color: var(--n-900); }
+
+/* =========================================================
+   Tables
+   ========================================================= */
+.table-wrap{ flex: 1 1 auto; overflow-x: auto; overflow-y: scroll; padding: 12px 16px 16px; min-height: 0; }
+.data-table{ width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table thead th{
+  position: sticky; top: 0;
+  background: var(--n-50);
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--n-600);
+  padding: 8px;
+  border-bottom: 1px solid var(--n-300);
+  white-space: nowrap;
+}
+.data-table tbody td{
+  padding: 8px;
+  border-bottom: 1px solid var(--n-200);
+  color: var(--n-800);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover{ background: var(--n-50); }
+.data-table tbody td:last-child{ white-space: nowrap; }
+.data-table tbody td:last-child .btn-icon + .btn-icon{ margin-left: 4px; }
+.data-table .num{ text-align: right; }
+.data-table .center{ text-align: center; }
+.data-table .cell-name{ font-weight: 600; color: var(--n-900); }
+.data-table tbody tr.row-start td{ background: var(--brand-cream); }
+.data-table tbody tr.row-warn td{ background: oklch(0.55 0.22 27 / 0.05); }
+.data-table tbody tr.row-draggable{ cursor: grab; }
+.data-table tbody tr.row-draggable.is-dragging{ opacity: 0.5; }
+.data-table tbody tr.is-drop-target td{ background: var(--n-200); }
+
+/* Sabit sütun genişlikleri: satır içi düzenleme (input'lu satır) tabloyu
+   yeniden akıtıp başlıklarla veriyi kaydırmasın diye. */
+.vehicle-table, .history-table, .traffic-table, .route-table, .favorite-table{ table-layout: fixed; }
+/* route-table (rota sonuç tablosu) 9 dar sütuna sahip; başlıkların
+   nowrap kalması sabit genişlikte taşmaya (ve panelin altında yatay
+   kaydırma çubuğuna) yol açıyordu — burada başlık metninin sarmasına
+   izin veriyoruz. */
+.route-table thead th{ white-space: normal; line-height: 1.25; }
+/* .input width:100% ile hücreyi tamamen dolduruyordu — Kullanılabilir/Palet/
+   Durak Süresi gibi 1-2 haneli sayılar için gereksiz geniş, kaba duruyordu.
+   Kutuyu sayının ihtiyacı kadar dar tutup hücre içinde ortalıyoruz. */
+.data-table td.num input[type="number"],
+.data-table td.center input[type="number"]{
+  width: 60px;
+  max-width: 100%;
+  margin: 0 auto;
+  display: block;
+  text-align: center;
+}
+
+.export-actions{ display: flex; gap: 8px; }
+
+/* =========================================================
+   Modal
+   ========================================================= */
+.modal-backdrop{
+  position: fixed; inset: 0;
+  background: oklch(0.185 0.010 44 / 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  z-index: 1200;
+}
+.modal{
+  background: var(--n-0);
+  border-radius: var(--r-large);
+  box-shadow: var(--shadow-md);
+  width: min(880px, 100%);
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+}
+.modal-header{
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--n-200);
+}
+.modal-title{ font-size: 16px; }
+.modal-body{ padding: 20px; overflow-y: scroll; display: flex; flex-direction: column; gap: 16px; }
+
+.form-card{
+  background: var(--n-50);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-card);
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.import-row{ display: flex; align-items: center; gap: 12px; }
+.check-row{ display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--n-800); cursor: pointer; }
+.check-row input{ accent-color: var(--brand-red); width: 15px; height: 15px; cursor: pointer; }
+
+/* =========================================================
+   Toast & overlay
+   ========================================================= */
+.toast{
+  position: fixed;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--n-900);
+  color: var(--n-0);
+  font-size: 13px; font-weight: 500;
+  padding: 10px 16px;
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-md);
+  z-index: 1400;
+  max-width: 480px;
+}
+.toast.is-error{ background: var(--brand-red); }
+.toast.is-success{ background: var(--brand-forest); }
+
+.overlay{
+  position: fixed; inset: 0;
+  background: oklch(0.185 0.010 44 / 0.35);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1300;
+}
+.overlay-card{
+  background: var(--n-0);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-md);
+  padding: 20px 24px;
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px; font-weight: 600; color: var(--n-800);
+}
+.spinner{
+  width: 16px; height: 16px;
+  border: 2px solid var(--n-300);
+  border-top-color: var(--brand-red);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin{ to{ transform: rotate(360deg); } }
+
+/* =========================================================
+   Map markers
+   ========================================================= */
+.legend-item{ display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--n-600); margin-left: 12px; }
+.dot{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot-start{ background: var(--n-900); }
+.dot-stop{ background: var(--brand-red); }
+.dot-warn{ background: var(--brand-coral); }
+
+.map-marker{
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--brand-red);
+  color: #fff;
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #fff;
+  box-shadow: var(--shadow-sm);
+}
+.map-marker.is-start{ background: var(--n-900); }
+.map-marker.is-warn{ background: var(--brand-coral); }
+.map-marker.is-idle{ background: var(--n-400); }
+
+.leaflet-container{ font-family: 'Outfit', system-ui, sans-serif; }
+
+/* =========================================================
+   Scrollbar'lar
+   Tarayıcı varsayılanı (özellikle Windows'taki kalın gri scrollbar)
+   sıcak tonlu/koyu tasarım sistemiyle uyuşmuyordu — panel içindeki tüm
+   kaydırılabilir alanlar için ince, nötr tonlu bir scrollbar tanımlıyoruz.
+   scrollbar-gutter: stable, scrollbar için gereken alanı içerik taşsın
+   taşmasın hep ayırır — aksi halde scrollbar aniden belirip/kaybolunca
+   (ör. ilk duraktan sonra) içerik genişliği kayıyor, kartlar
+   daralıp genişliyordu.
+   ========================================================= */
+.panel-scroll,
+#planGroups,
+.table-wrap,
+.modal-body{
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-300) var(--n-100);
+  scrollbar-gutter: stable;
+}
+.panel-scroll::-webkit-scrollbar,
+#planGroups::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar{
+  width: 8px;
+  height: 8px;
+}
+.panel-scroll::-webkit-scrollbar-track,
+#planGroups::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track{
+  /* Şeffaf track + thumb'sız (taşma yokken) durumda Chromium bu alanı
+     görsel olarak "boş" gösteriyor — hafif bir zemin rengiyle scrollbar
+     oluğu taşma olsun olmasın her zaman sabit ve görünür kalıyor. */
+  background: var(--n-100);
+}
+.panel-scroll::-webkit-scrollbar-thumb,
+#planGroups::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb{
+  background-color: var(--n-300);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.panel-scroll::-webkit-scrollbar-thumb:hover,
+#planGroups::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.modal-body::-webkit-scrollbar-thumb:hover{
+  background-color: var(--n-400);
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@media (max-width: 1280px){
+  .app-body{ grid-template-columns: 300px minmax(0,1fr) minmax(0,1fr); }
+  .summary{ grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Kısa pencerelerde (küçük dizüstü, tarayıcı araç çubuğu vb.) boşlukları biraz
+   sıkılaştır — amaç sayfayı tamamen doldurmak değil, "Durağı ekle" butonuna
+   kadar olan kısmın kaydırmadan görünmesi; altındaki durak listesi/not
+   gerekirse kaydırılabilir kalabilir. */
+@media (max-height: 820px){
+  .panel-header{ padding: 14px 16px 10px; }
+  .panel-scroll{ padding: 14px 16px; gap: 14px; }
+  .panel-footer{ padding: 10px 16px 12px; gap: 8px; }
+  .capacity{ padding: 8px; margin-top: 2px; }
+  .capacity-head{ margin-bottom: 6px; }
+  .section-head{ margin-bottom: 6px; }
+  .stop-form{ gap: 8px; margin-bottom: 10px; }
+  .field-group{ gap: 6px; }
+}
+
+/* =========================================================
+   Başlangıç hatası bandı
+   ========================================================= */
+.startup-error{
+  position: fixed;
+  top: 56px; left: 0; right: 0;
+  background: var(--brand-red);
+  color: var(--n-0);
+  font-size: 13px; font-weight: 600;
+  padding: 10px 20px;
+  z-index: 1500;
+}
+.map-fallback{
+  display: flex; align-items: center; justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--n-500);
+}

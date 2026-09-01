@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rota Planlama Paneli</title>
+<link rel="icon" type="image/png" href="logo.png" />
+
+<link rel="stylesheet" href="vendor/fonts/outfit.css" />
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <img src="yatay_beyaz.png" alt="Turkish Support Services" class="brand-logo"
+         onerror="this.style.display='none';document.getElementById('brandFallback').style.display='block'" />
+    <span id="brandFallback" class="brand-fallback" style="display:none">Turkish Support Services</span>
+    <span class="brand-divider"></span>
+    <span class="brand-product">Rota Planlama Paneli</span>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost-light" id="btnManageLocations">Lokasyonlar</button>
+    <button class="btn btn-ghost-light" id="btnManageVehicles">Araçlar</button>
+    <button class="btn btn-ghost-light" id="btnFavoriteRoutes">Favori Rotalar</button>
+    <button class="btn btn-ghost-light" id="btnTripHistory">Sefer Geçmişi</button>
+    <button class="btn btn-ghost-light" id="btnTrafficSettings">Trafik Ayarları</button>
+  </div>
+</header>
+
+<main class="app-body">
+
+  <!-- ============ SOL PANEL: PLANLAMA ============ -->
+  <aside class="panel panel-plan">
+    <div class="panel-header">
+      <h2 class="panel-title">Sefer Planı</h2>
+    </div>
+
+    <div class="panel-scroll">
+
+      <section class="field-group">
+        <div class="capacity" id="capacityBox">
+          <div class="capacity-head">
+            <span class="capacity-label">Filo Kapasitesi Kullanımı</span>
+            <span class="capacity-value" id="capacityText">0 / 0 palet</span>
+          </div>
+          <div class="capacity-track"><div class="capacity-fill" id="capacityFill"></div></div>
+        </div>
+      </section>
+
+      <section class="field-row">
+        <div class="field-group">
+          <label class="label" for="selStart">Hareket Noktası</label>
+          <select id="selStart" class="input"></select>
+        </div>
+      </section>
+
+      <section class="field-row field-row-3">
+        <div class="field-group">
+          <label class="label label-sm" for="inpDeparture">Hareket Saati</label>
+          <input type="time" id="inpDeparture" class="input input-sm" value="08:00" />
+        </div>
+        <div class="field-group">
+          <label class="label label-sm" for="inpService">Durak Süresi (dk)</label>
+          <input type="number" id="inpService" class="input input-sm" value="15" min="0" step="5" />
+        </div>
+        <div class="field-group">
+          <label class="label label-sm" for="inpInitialLoad">Başlangıç Yükü</label>
+          <input type="number" id="inpInitialLoad" class="input input-sm" value="0" min="0" step="1" />
+        </div>
+      </section>
+
+      <section class="field-row">
+        <div class="field-group">
+          <label class="label label-sm" for="selCostMetric">Optimizasyon</label>
+          <select id="selCostMetric" class="input input-sm">
+            <option value="distance">En Kısa Mesafe (km)</option>
+            <option value="duration">En Az Süre (dk)</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="field-group">
+        <div class="section-head">
+          <span class="label">Duraklar</span>
+          <span class="hint" id="stopCountHint">0 durak</span>
+        </div>
+
+        <div class="stop-form">
+          <div class="field-row field-row-3">
+            <div class="field-group">
+              <label class="label label-sm" for="selStopLocation">Lokasyon</label>
+              <select id="selStopLocation" class="input input-sm"></select>
+            </div>
+            <div class="field-group">
+              <label class="label label-sm" for="selStopType">İşlem</label>
+              <select id="selStopType" class="input input-sm">
+                <option value="pickup">Yükleme</option>
+                <option value="delivery">Boşaltma</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label class="label label-sm" for="inpStopPallets">Palet</label>
+              <input type="number" id="inpStopPallets" class="input input-sm" value="1" min="1" step="1" />
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-block" id="btnAddStop">Durağı Ekle</button>
+          <p class="inline-error" id="stopError" hidden></p>
+        </div>
+
+        <ul class="stop-list" id="stopList"></ul>
+        <p class="empty-note" id="stopEmpty">Henüz durak eklenmedi. Yukarıdan lokasyon ve palet miktarı seçin.</p>
+      </section>
+
+    </div>
+
+    <div class="panel-footer">
+      <button class="btn btn-primary btn-block" id="btnPlan">Rotayı Planla</button>
+      <button class="btn btn-neutral btn-block" id="btnClear">Planı Temizle</button>
+    </div>
+  </aside>
+
+  <!-- ============ ORTA: HARİTA ============ -->
+  <section class="panel panel-map">
+    <div class="panel-header panel-header-row">
+      <div>
+        <h2 class="panel-title">Harita</h2>
+      </div>
+      <div class="map-legend">
+        <span class="legend-item"><i class="dot dot-start"></i>Hareket</span>
+        <span class="legend-item"><i class="dot dot-stop"></i>Durak</span>
+        <span class="legend-item"><i class="dot dot-warn"></i>Kısıt İhlali</span>
+      </div>
+    </div>
+    <div id="map" class="map-canvas"></div>
+  </section>
+
+  <!-- ============ SAĞ: TABLO ============ -->
+  <aside class="panel panel-table">
+    <div class="panel-header panel-header-row">
+      <div>
+        <h2 class="panel-title">Rota Tablosu</h2>
+      </div>
+      <div class="export-actions">
+        <button class="btn btn-neutral btn-sm" id="btnGoogleMaps" disabled>Google Maps</button>
+        <button class="btn btn-neutral btn-excel btn-sm" id="btnExportExcel" disabled>Excel</button>
+        <button class="btn btn-neutral btn-sm" id="btnExportPdf" disabled>PDF</button>
+      </div>
+    </div>
+
+    <div class="weather-warnings" id="weatherWarnings" hidden>
+      <strong class="weather-warnings-title">Hava Durumu Uyarısı</strong>
+    </div>
+
+    <div class="fleet-warning" id="fleetWarning" hidden></div>
+
+    <div id="planGroups"></div>
+    <p class="empty-note" id="tableEmpty">Rota planlandığında sıralı durak listesi burada görünür.</p>
+
+    <div class="panel-footer">
+      <div class="btn-row">
+        <button class="btn btn-forest" id="btnFavoriteRoute" disabled>Rotayı Favorilere Ekle</button>
+        <button class="btn btn-primary" id="btnApproveRoute" disabled>Rotayı Onayla</button>
+      </div>
+    </div>
+  </aside>
+
+</main>
+
+<!-- ============ LOKASYON YÖNETİMİ ============ -->
+<div class="modal-backdrop" id="modalLocations" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Lokasyonlar</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalLocations">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-card">
+        <div class="field-row field-row-3">
+          <div class="field-group">
+            <label class="label label-sm" for="locName">Ad</label>
+            <input type="text" id="locName" class="input input-sm" placeholder="Örn. AHL Kargo Binası" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="locLat">Enlem</label>
+            <input type="text" id="locLat" class="input input-sm" placeholder="40.980433" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="locLng">Boylam</label>
+            <input type="text" id="locLng" class="input input-sm" placeholder="28.830220" />
+          </div>
+        </div>
+        <div class="field-row field-row-3">
+          <div class="field-group">
+            <label class="label label-sm" for="locFrom">Erişim Başlangıcı</label>
+            <input type="time" id="locFrom" class="input input-sm" value="00:00" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="locUntil">Erişim Bitişi</label>
+            <input type="time" id="locUntil" class="input input-sm" value="23:59" />
+          </div>
+          <div class="field-group field-actions">
+            <button class="btn btn-primary btn-block" id="btnAddLocation">Lokasyon Ekle</button>
+          </div>
+        </div>
+        <p class="hint">Haritaya sağ tıklayarak da lokasyon ekleyebilirsiniz. Erişim saatleri o lokasyona varılabilecek zaman aralığını tanımlar.</p>
+      </div>
+
+      <div class="import-row">
+        <label class="btn btn-secondary btn-sm file-btn">
+          Excel'den içe aktar
+          <input type="file" id="fileLocations" accept=".xlsx,.xls,.csv" hidden />
+        </label>
+        <span class="hint">Beklenen Sütunlar: Ad · Enlem · Boylam · Açılış · Kapanış</span>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr><th>Ad</th><th>Enlem</th><th>Boylam</th><th>Erişim</th><th></th></tr>
+        </thead>
+        <tbody id="locationTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ARAÇ YÖNETİMİ ============ -->
+<div class="modal-backdrop" id="modalVehicles" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Araçlar</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalVehicles">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-card">
+        <div class="field-row field-row-3">
+          <div class="field-group">
+            <label class="label label-sm" for="vehPlate">Plaka</label>
+            <input type="text" id="vehPlate" class="input input-sm" placeholder="34 YKD 43" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="vehModel">Model</label>
+            <input type="text" id="vehModel" class="input input-sm" placeholder="Fiat Ducato" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="vehCapacity">Palet Kapasitesi</label>
+            <input type="number" id="vehCapacity" class="input input-sm" min="1" step="1" placeholder="5" />
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btnAddVehicle">Araç Ekle</button>
+      </div>
+
+      <div class="import-row">
+        <label class="btn btn-secondary btn-sm file-btn">
+          Excel'den içe aktar
+          <input type="file" id="fileVehicles" accept=".xlsx,.xls,.csv" hidden />
+        </label>
+        <span class="hint">Beklenen Sütunlar: Plaka · Model · Kapasite</span>
+      </div>
+
+      <table class="data-table vehicle-table">
+        <colgroup>
+          <col style="width:16%">
+          <col style="width:26%">
+          <col style="width:12%">
+          <col style="width:20%">
+          <col style="width:26%">
+        </colgroup>
+        <thead>
+          <tr><th>Plaka</th><th>Model</th><th class="center">Kapasite</th><th class="center">Kullanılabilir</th><th class="center">İşlem</th></tr>
+        </thead>
+        <tbody id="vehicleTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SEFER GEÇMİŞİ ============ -->
+<div class="modal-backdrop" id="modalHistory" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Sefer Geçmişi</h3>
+      <div class="export-actions">
+        <button class="btn btn-neutral btn-excel btn-sm" id="btnExportHistoryExcel" disabled>Excel</button>
+        <button class="btn btn-neutral btn-sm" id="btnExportHistoryPdf" disabled>PDF</button>
+        <button class="btn btn-neutral btn-sm" data-close-modal="modalHistory">Kapat</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <table class="data-table history-table">
+        <colgroup>
+          <col style="width:18%">
+          <col style="width:16%">
+          <col style="width:22%">
+          <col style="width:10%">
+          <col style="width:10%">
+          <col style="width:12%">
+          <col style="width:12%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Onay Tarihi</th>
+            <th>Araç(lar)</th>
+            <th>Başlangıç</th>
+            <th class="center">Durak</th>
+            <th class="num">Mesafe</th>
+            <th class="num">Süre</th>
+            <th class="center">İşlem</th>
+          </tr>
+        </thead>
+        <tbody id="historyTableBody"></tbody>
+      </table>
+      <p class="empty-note" id="historyEmpty" hidden>Henüz onaylanmış bir sefer yok. Rota tablosundan "Rotayı onayla" ile kaydedebilirsin.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TRAFİK AYARLARI ============ -->
+<div class="modal-backdrop" id="modalTraffic" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Trafik Ayarları</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalTraffic">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-card">
+        <label class="check-row">
+          <input type="checkbox" id="trafficEnabled" />
+          <span>Trafik katsayılarını uygula</span>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="trafficWeekend" />
+          <span>Hafta sonu için de sabah/akşam yoğunluğunu uygula (Varsayılan: uygulanmaz)</span>
+        </label>
+      </div>
+
+      <table class="data-table traffic-table">
+        <colgroup>
+          <col style="width:24%">
+          <col style="width:24%">
+          <col style="width:24%">
+          <col style="width:28%">
+        </colgroup>
+        <thead>
+          <tr><th></th><th>Başlangıç</th><th>Bitiş</th><th class="center">Çarpan</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cell-name">Sabah yoğunluğu</td>
+            <td><input type="time" id="trafficMorningStart" class="input input-sm" /></td>
+            <td><input type="time" id="trafficMorningEnd" class="input input-sm" /></td>
+            <td class="center"><input type="number" id="trafficMorningFactor" class="input input-sm" min="0.1" step="0.1" /></td>
+          </tr>
+          <tr>
+            <td class="cell-name">Akşam yoğunluğu</td>
+            <td><input type="time" id="trafficEveningStart" class="input input-sm" /></td>
+            <td><input type="time" id="trafficEveningEnd" class="input input-sm" /></td>
+            <td class="center"><input type="number" id="trafficEveningFactor" class="input input-sm" min="0.1" step="0.1" /></td>
+          </tr>
+          <tr>
+            <td class="cell-name">Gece (trafik az)</td>
+            <td><input type="time" id="trafficNightStart" class="input input-sm" /></td>
+            <td><input type="time" id="trafficNightEnd" class="input input-sm" /></td>
+            <td class="center"><input type="number" id="trafficNightFactor" class="input input-sm" min="0.1" step="0.1" /></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="form-card">
+        <div class="field-group">
+          <label class="label label-sm" for="inpTomTomKey">TomTom API Key</label>
+          <input type="password" id="inpTomTomKey" class="input input-sm" placeholder="TomTom Developer Portal'dan alınan key" autocomplete="off" />
+        </div>
+        <p class="hint">
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ROTA ONAYI: NOT EKLE ============ -->
+<div class="modal-backdrop" id="modalApprove" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Rotayı Onayla</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalApprove">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <label class="label" for="inpApproveNote">Not (opsiyonel)</label>
+        <textarea id="inpApproveNote" class="input" rows="4"
+          placeholder="Örn. Bu araç 3.5 tonun üstünde, X köprüsünden geçemez. Y bölgesine gece 22:00'den sonra giriş yok."></textarea>
+        <p class="hint">Bu not PDF çıktısına eklenir ve sefer geçmişinde saklanır.</p>
+      </div>
+      <button class="btn btn-primary btn-block" id="btnConfirmApprove">Onayla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ROTAYI FAVORİLERE EKLE: İSİM VER ============ -->
+<div class="modal-backdrop" id="modalSaveFavorite" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Rotayı Favorilere Ekle</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalSaveFavorite">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <label class="label" for="inpFavoriteName">Rota Adı</label>
+        <input type="text" id="inpFavoriteName" class="input" placeholder="Örn. Sabah AHL Turu" maxlength="60" />
+      </div>
+      <button class="btn btn-primary btn-block" id="btnConfirmSaveFavorite">Onayla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FAVORİ ROTALAR ============ -->
+<div class="modal-backdrop" id="modalFavorites" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Favori Rotalar</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalFavorites">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table favorite-table">
+        <colgroup>
+          <col style="width:52%">
+          <col style="width:24%">
+          <col style="width:24%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Ad</th>
+            <th>Kaydedilme</th>
+            <th class="center">İşlem</th>
+          </tr>
+        </thead>
+        <tbody id="favoriteTableBody"></tbody>
+      </table>
+      <p class="empty-note" id="favoriteEmpty" hidden>Henüz favori rota yok.</p>
+    </div>
+  </div>
+</div>
+
+<div class="startup-error" id="startupError" hidden></div>
+
+<div class="toast" id="toast" hidden></div>
+
+<div class="overlay" id="loading" hidden>
+  <div class="overlay-card">
+    <span class="spinner"></span>
+    <span id="loadingText">Rota hesaplanıyor…</span>
+  </div>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="vendor/fonts/pdf-font-arial.js"></script>
+
+<script src="js/data.js"></script>
+<script src="js/osrm.js"></script>
+<script src="js/tomtom.js"></script>
+<script src="js/weather.js"></script>
+<script src="js/optimizer.js"></script>
+<script src="js/fleet.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>OSRM vs TomTom — Trafik Karşılaştırma Testi</title>
+<style>
+  body { font-family: system-ui, Arial, sans-serif; max-width: 980px; margin: 24px auto; padding: 0 16px; color: #2a2421; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin-top: 28px; }
+  .note { background: #f4efeb; border: 1px solid #e6e0db; border-radius: 8px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; }
+  .field-row { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+  input[type=text], input[type=password], input[type=number] {
+    padding: 6px 8px; border: 1px solid #d4ccc6; border-radius: 6px; font-size: 13.5px;
+  }
+  input[type=password] { width: 320px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 13px; }
+  th, td { border: 1px solid #e6e0db; padding: 6px 8px; text-align: left; }
+  th { background: #f9f6f2; }
+  td.num, th.num { text-align: right; }
+  button { background: #C90C0F; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #a80a0d; }
+  button:disabled { background: #d4ccc6; cursor: not-allowed; }
+  .status { margin: 10px 0; font-size: 13.5px; }
+  .status.error { color: #C90C0F; font-weight: 600; }
+  .status.ok { color: #1E8F5F; font-weight: 600; }
+  .diff-high { color: #C90C0F; font-weight: 700; }
+  .diff-low { color: #7f7570; }
+  .small { font-size: 12px; color: #7f7570; }
+  .add-row input { width: 140px; }
+</style>
+</head>
+<body>
+
+<h1>OSRM vs TomTom — Trafik Karşılaştırma Testi</h1>
+<div class="note">
+  Bu sayfa projeye <strong>hiç dahil edilmiyor</strong> — <code>index.html</code>'den tamamen bağımsız,
+  tek başına bir test aracı. Amaç: aynı gerçek noktalar için OSRM'in (şu an kullanılan, trafiksiz)
+  ve TomTom'un (canlı trafik dahil) mesafe/süre tahminlerini yan yana görmek. Hiçbir veri projeye
+  kaydedilmiyor, TomTom key'iniz sadece bu sayfanın kendi tarayıcı deposunda (localStorage) tutuluyor.
+</div>
+
+<h2>1. TomTom API Key</h2>
+<div class="field-row">
+  <input type="password" id="apiKey" placeholder="TomTom API key'inizi yapıştırın" />
+  <span class="small">Kartsız, ücretsiz hesaptan alınan key — developer.tomtom.com</span>
+</div>
+
+<h2>2. Noktalar (proje lokasyonlarınızdan)</h2>
+<table id="pointsTable">
+  <thead>
+    <tr><th>Başlangıç</th><th>Dahil et</th><th>Ad</th><th class="num">Enlem</th><th class="num">Boylam</th></tr>
+  </thead>
+  <tbody id="pointsBody"></tbody>
+</table>
+
+<div class="field-row add-row">
+  <input type="text" id="newName" placeholder="Yeni nokta adı" />
+  <input type="number" id="newLat" placeholder="Enlem" step="0.000001" />
+  <input type="number" id="newLng" placeholder="Boylam" step="0.000001" />
+  <button type="button" id="btnAddPoint">+ Nokta Ekle</button>
+</div>
+
+<h2>3. Karşılaştır</h2>
+<div class="field-row">
+  <button type="button" id="btnCompare">OSRM ile TomTom'u Karşılaştır</button>
+</div>
+<div class="status" id="status"></div>
+
+<div id="resultWrap" style="display:none">
+  <h2>Sonuç — hücre bazında karşılaştırma</h2>
+  <p class="small">
+    "Fark" sütunu: TomTom'un canlı trafik dahil süresi ile OSRM'in trafiksiz süresi arasındaki farkı gösterir.
+    Kırmızı = TomTom'un o an gördüğü canlı trafik OSRM'in varsayımından belirgin şekilde (±%15'ten fazla) farklı.
+  </p>
+  <table id="resultTable">
+    <thead>
+      <tr>
+        <th>Nereden</th><th>Nereye</th>
+        <th class="num">OSRM mesafe (km)</th><th class="num">OSRM süre (dk)</th>
+        <th class="num">TomTom mesafe (km)</th><th class="num">TomTom süre (dk)</th>
+        <th class="num">Trafik gecikmesi (dk)</th><th class="num">Fark</th>
+      </tr>
+    </thead>
+    <tbody id="resultBody"></tbody>
+  </table>
+</div>
+
+<script>
+'use strict';
+
+// Projenin js/data.js içindeki DEFAULT_LOCATIONS ile aynı gerçek noktalar.
+var DEFAULT_POINTS = [
+  { name: 'AHL Kargo Binası',       lat: 40.980433, lng: 28.830220 },
+  { name: 'AHL Ulaştırma B Kapısı', lat: 40.985336, lng: 28.818313 },
+  { name: 'İHL ASG Binası',         lat: 41.253611, lng: 28.714696 },
+  { name: 'İHL Smartist Kargo',     lat: 41.277568, lng: 28.718970 },
+  { name: 'ISL-2 Teknik A.Ş.',      lat: 40.987452, lng: 28.818704 },
+  { name: 'THY Genel Müdürlük',     lat: 40.982539, lng: 28.825014 }
+];
+
+var KEY_STORAGE = 'tss-test-tomtom-key';
+
+function $(id) { return document.getElementById(id); }
+
+function loadKey() {
+  try { return localStorage.getItem(KEY_STORAGE) || ''; } catch (e) { return ''; }
+}
+function saveKey(v) {
+  try { localStorage.setItem(KEY_STORAGE, v); } catch (e) { /* yoksay */ }
+}
+
+function renderPointsTable() {
+  var body = $('pointsBody');
+  body.innerHTML = '';
+  DEFAULT_POINTS.forEach(function (p, i) {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="radio" name="startPoint" value="' + i + '"' + (i === 0 ? ' checked' : '') + '></td>' +
+      '<td><input type="checkbox" class="includeChk" value="' + i + '"' + (i !== 0 ? ' checked' : '') + '></td>' +
+      '<td>' + p.name + '</td>' +
+      '<td class="num">' + p.lat + '</td>' +
+      '<td class="num">' + p.lng + '</td>';
+    body.appendChild(tr);
+  });
+}
+
+$('btnAddPoint').addEventListener('click', function () {
+  var name = $('newName').value.trim();
+  var lat = parseFloat($('newLat').value);
+  var lng = parseFloat($('newLng').value);
+  if (!name || !isFinite(lat) || !isFinite(lng)) {
+    alert('Ad, enlem ve boylam gerekli.');
+    return;
+  }
+  DEFAULT_POINTS.push({ name: name, lat: lat, lng: lng });
+  renderPointsTable();
+  $('newName').value = ''; $('newLat').value = ''; $('newLng').value = '';
+});
+
+function getSelectedPoints() {
+  var startIdx = parseInt(document.querySelector('input[name=startPoint]:checked').value, 10);
+  var includeIdx = Array.prototype.map.call(
+    document.querySelectorAll('.includeChk:checked'), function (el) { return parseInt(el.value, 10); }
+  ).filter(function (i) { return i !== startIdx; });
+  var ordered = [startIdx].concat(includeIdx);
+  return ordered.map(function (i) { return DEFAULT_POINTS[i]; });
+}
+
+function setStatus(msg, kind) {
+  var el = $('status');
+  el.textContent = msg;
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function km(meters) { return (meters / 1000).toFixed(1); }
+function mins(seconds) { return (seconds / 60).toFixed(1); }
+
+/* ---- OSRM: mevcut projenin osrm.js'iyle birebir aynı istek ---- */
+function fetchOsrmMatrix(points) {
+  var coordStr = points.map(function (p) { return p.lng.toFixed(6) + ',' + p.lat.toFixed(6); }).join(';');
+  var url = 'https://router.project-osrm.org/table/v1/driving/' + coordStr + '?annotations=duration,distance';
+  return fetch(url).then(function (res) {
+    if (!res.ok) throw new Error('OSRM isteği başarısız (HTTP ' + res.status + ').');
+    return res.json();
+  }).then(function (json) {
+    if (!json.distances || !json.durations) throw new Error('OSRM yanıtı beklenmedik formatta.');
+    return { distances: json.distances, durations: json.durations };
+  });
+}
+
+/* ---- TomTom Matrix Routing v2 (senkron), canlı trafik dahil ----
+   Doğrulanmış format: docs.tomtom.com/matrix-routing-v2-api/documentation/synchronous-matrix */
+function fetchTomTomMatrix(points, apiKey) {
+  var url = 'https://api.tomtom.com/routing/matrix/2?key=' + encodeURIComponent(apiKey);
+  var body = {
+    origins: points.map(function (p) { return { point: { latitude: p.lat, longitude: p.lng } }; }),
+    destinations: points.map(function (p) { return { point: { latitude: p.lat, longitude: p.lng } }; }),
+    options: { departAt: 'now', traffic: 'live', travelMode: 'car' }
+  };
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function (res) {
+    if (!res.ok) {
+      return res.text().then(function (t) {
+        throw new Error('TomTom isteği başarısız (HTTP ' + res.status + '): ' + t.slice(0, 200));
+      });
+    }
+    return res.json();
+  }).then(function (json) {
+    if (!json.data) throw new Error('TomTom yanıtı beklenmedik formatta.');
+    var n = points.length;
+    var distances = [], durations = [], delays = [];
+    for (var i = 0; i < n; i++) { distances.push([]); durations.push([]); delays.push([]); }
+    json.data.forEach(function (cell) {
+      var s = cell.routeSummary;
+      distances[cell.originIndex][cell.destinationIndex] = s ? s.lengthInMeters : null;
+      durations[cell.originIndex][cell.destinationIndex] = s ? s.travelTimeInSeconds : null;
+      delays[cell.originIndex][cell.destinationIndex] = s ? (s.trafficDelayInSeconds || 0) : null;
+    });
+    return { distances: distances, durations: durations, delays: delays };
+  });
+}
+
+function renderResults(points, osrm, tomtom) {
+  var body = $('resultBody');
+  body.innerHTML = '';
+  for (var i = 0; i < points.length; i++) {
+    for (var j = 0; j < points.length; j++) {
+      if (i === j) continue;
+      var oDist = osrm.distances[i][j], oDur = osrm.durations[i][j];
+      var tDist = tomtom.distances[i][j], tDur = tomtom.durations[i][j], tDelay = tomtom.delays[i][j];
+      var tr = document.createElement('tr');
+      var diffCell = '—';
+      if (oDur != null && tDur != null && oDur > 0) {
+        var pct = ((tDur - oDur) / oDur) * 100;
+        var cls = Math.abs(pct) > 15 ? 'diff-high' : 'diff-low';
+        diffCell = '<span class="' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%</span>';
+      }
+      tr.innerHTML =
+        '<td>' + points[i].name + '</td>' +
+        '<td>' + points[j].name + '</td>' +
+        '<td class="num">' + (oDist != null ? km(oDist) : '—') + '</td>' +
+        '<td class="num">' + (oDur != null ? mins(oDur) : '—') + '</td>' +
+        '<td class="num">' + (tDist != null ? km(tDist) : '—') + '</td>' +
+        '<td class="num">' + (tDur != null ? mins(tDur) : '—') + '</td>' +
+        '<td class="num">' + (tDelay != null ? mins(tDelay) : '—') + '</td>' +
+        '<td class="num">' + diffCell + '</td>';
+      body.appendChild(tr);
+    }
+  }
+  $('resultWrap').style.display = '';
+}
+
+$('btnCompare').addEventListener('click', function () {
+  var apiKey = $('apiKey').value.trim();
+  if (!apiKey) { setStatus('TomTom API key girin.', 'error'); return; }
+  saveKey(apiKey);
+
+  var points = getSelectedPoints();
+  if (points.length < 2) { setStatus('En az 2 nokta (1 başlangıç + 1 durak) seçin.', 'error'); return; }
+
+  $('btnCompare').disabled = true;
+  setStatus('İstekler gönderiliyor (' + points.length + ' nokta, ' + (points.length * points.length) + ' hücre)…');
+
+  Promise.all([fetchOsrmMatrix(points), fetchTomTomMatrix(points, apiKey)])
+    .then(function (res) {
+      renderResults(points, res[0], res[1]);
+      setStatus('Tamamlandı. ' + points.length + ' nokta için ' + (points.length * (points.length - 1)) + ' hücre karşılaştırıldı.', 'ok');
+    })
+    .catch(function (err) {
+      setStatus('Hata: ' + err.message, 'error');
+    })
+    .finally(function () {
+      $('btnCompare').disabled = false;
+    });
+});
+
+// Sayfa açılışı
+$('apiKey').value = loadKey();
+renderPointsTable();
+</script>
+</body>
+</html>
