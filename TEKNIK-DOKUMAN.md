@@ -53,26 +53,26 @@ Kasıtlı olarak **backend'siz**: kurulum/deploy karmaşıklığı olmadan `inde
 │  (DOM iskeleti, modal'lar, <script> yükleme sırası)           │
 └─────────────────────────────────────────────────────────────┘
         │
-        ▼  script sırası: data → osrm → weather → optimizer → fleet → exporter → app
-┌───────────────┐   ┌──────────┐   ┌───────────┐
-│   data.js      │   │ osrm.js  │   │ weather.js│   (dış servis istemcileri /
-│  (state +      │   │ (mesafe/ │   │ (hava     │    veri katmanı — birbirinden
-│  localStorage) │   │  rota)   │   │  durumu)  │    bağımsız)
-└───────┬────────┘   └────┬─────┘   └─────┬─────┘
-        │                 │               │
-        │        ┌────────▼────────┐      │
-        │        │  optimizer.js    │      │
-        │        │  (tek araç sıra- │      │
-        │        │  lama algoritması)│     │
-        │        └────────┬─────────┘      │
-        │                 │                │
-        │        ┌────────▼─────────┐      │
-        │        │    fleet.js       │      │
-        │        │ (çoklu araç       │      │
-        │        │  kümeleme/atama)  │      │
-        │        └────────┬──────────┘      │
-        │                 │                 │
-        └─────────────────┼─────────────────┘
+        ▼  script sırası: data → osrm → tomtom → weather → optimizer → fleet → exporter → app
+┌───────────────┐   ┌──────────┐   ┌───────────┐   ┌───────────┐
+│   data.js      │   │ osrm.js  │   │ tomtom.js │   │ weather.js│   (dış servis istemcileri /
+│  (state +      │   │ (mesafe/ │   │ (canlı    │   │ (hava     │    veri katmanı — birbirinden
+│  localStorage) │   │  rota)   │   │  trafik)  │   │  durumu)  │    bağımsız)
+└───────┬────────┘   └────┬─────┘   └─────┬─────┘   └─────┬─────┘
+        │                 │                │               │
+        │        ┌────────▼────────┐       │               │
+        │        │  optimizer.js    │       │               │
+        │        │  (tek araç sıra- │       │               │
+        │        │  lama algoritması)│      │               │
+        │        └────────┬─────────┘       │               │
+        │                 │                 │               │
+        │        ┌────────▼─────────┐       │               │
+        │        │    fleet.js       │◀─────┘               │
+        │        │ (çoklu araç       │  (replayGroupWithLiveLegs) │
+        │        │  kümeleme/atama)  │      │                │
+        │        └────────┬──────────┘      │                │
+        │                 │                 │                │
+        └─────────────────┼─────────────────┴────────────────┘
                            ▼
                   ┌─────────────────┐        ┌──────────────┐
                   │     app.js       │──────▶│ exporter.js   │
@@ -84,19 +84,22 @@ Kasıtlı olarak **backend'siz**: kurulum/deploy karmaşıklığı olmadan `inde
 
 **Modül deseni:** Her `js/*.js` dosyası bir IIFE içinde tanımlanır ve `window`
 üzerine **tek bir obje** export eder (`window.TSSData`, `window.TSSOsrm`,
-`window.TSSWeather`, `window.TSSOptimizer`, `window.TSSFleet`,
+`window.TSSTomTom`, `window.TSSWeather`, `window.TSSOptimizer`, `window.TSSFleet`,
 `window.TSSExporter`). Modül sistemi (ESM/CommonJS/bundler) yok — sıralı
-`<script>` etiketleriyle global namespace'e yükleniyor (bkz. `index.html`
-satır 445-451). Dairesel bağımlılık yok; bağımlılık grafiği tek yönlü:
+`<script>` etiketleriyle global namespace'e yükleniyor (bkz. `index.html`,
+`<script>` blokları dosyanın sonunda, `</body>`'den hemen önce). Dairesel
+bağımlılık yok; bağımlılık grafiği tek yönlü:
 
 ```
 data.js  (bağımsız — sadece kendi state'i)
 osrm.js  (bağımsız)
+tomtom.js (bağımsız — sadece js/app.js tarafından, opsiyonel/best-effort çağrılır)
 weather.js (bağımsız)
 optimizer.js (bağımsız — saf hesaplama, DOM'a hiç dokunmaz)
-fleet.js  → optimizer.js
+fleet.js  → optimizer.js  (+ replayGroupWithLiveLegs: TomTom'un ürettiği bacak
+                            verisini işler, ama TomTom'u kendisi hiç çağırmaz)
 exporter.js (bağımsız — sadece plan/history nesnesi alır)
-app.js    → data.js + osrm.js + weather.js + optimizer.js + fleet.js + exporter.js
+app.js    → data.js + osrm.js + tomtom.js + weather.js + optimizer.js + fleet.js + exporter.js
 ```
 
 Bu ayrım bilinçli: **algoritma katmanı (`optimizer.js`, `fleet.js`) hiçbir
@@ -113,7 +116,8 @@ teorik olarak Node.js'te de (tarayıcı olmadan) test edilebilir/çalıştırıl
 | Dil | Vanilla JavaScript (ES5 üslubu: `'use strict'`, `function` ifadeleri, IIFE) | Framework yok (React/Vue/Angular yok), build adımı yok, TypeScript yok |
 | Harita | [Leaflet](vendor/leaflet/leaflet.js) | `vendor/` altında yerel, CDN değil |
 | Harita karoları | OpenStreetMap tile sunucusu (`{s}.tile.openstreetmap.org`) | `js/app.js` içindeki `L.tileLayer` — internet bağımlılığı |
-| Rota/mesafe | [OSRM](https://project-osrm.org/) demo sunucusu (`router.project-osrm.org`) | `js/osrm.js` — internet bağımlılığı, bkz. §13 |
+| Rota/mesafe | [OSRM](https://project-osrm.org/) demo sunucusu (`router.project-osrm.org`) | `js/osrm.js` — internet bağımlılığı, bkz. §13. Sıralama kararının tek girdisi; her zaman çağrılır. |
+| Canlı trafik (opsiyonel) | [TomTom Routing API](https://developer.tomtom.com/routing-api) | `js/tomtom.js` — sadece "En Az Süre" modunda ve kullanıcı kendi API key'ini girdiyse çağrılır; ücretli/kotalı, anahtar gerektirir, bkz. §10.3 |
 | Hava durumu | [Open-Meteo](https://open-meteo.com/) API | Anahtar gerektirmez, ücretsiz — `js/weather.js` |
 | Excel içe/dışa aktarma | [SheetJS (xlsx.full.min.js)](vendor/xlsx.full.min.js) | `vendor/` altında yerel |
 | PDF üretimi | [jsPDF](vendor/jspdf.umd.min.js) + [jspdf-autotable](vendor/jspdf.plugin.autotable.min.js) | Tablo + serbest metin/şekil çizimi |
@@ -133,13 +137,14 @@ index.html          DOM iskeleti + script yükleme sırası
 styles.css           Tüm görsel tasarım (tasarım sistemi: bkz. "Turkish Support
                       Services — Design System.md")
 js/
-  data.js    (465 satır)  Veri modeli, localStorage, Excel satır normalizasyonu
+  data.js    (487 satır)  Veri modeli, localStorage, Excel satır normalizasyonu, TomTom key
   osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
+  tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
-  optimizer.js (325 satır) TEK ARAÇ rota sıralama algoritması
-  fleet.js   (293 satır)  ÇOKLU ARAÇ kümeleme + atama (optimizer'ı sarmalar)
+  optimizer.js (336 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
+  fleet.js   (412 satır)  ÇOKLU ARAÇ kümeleme + atama (optimizer'ı sarmalar) + canlı trafik replay
   exporter.js (458 satır) Excel/PDF üretimi
-  app.js    (~1840 satır) UI orkestrasyonu — en büyük dosya, diğer 6 modülü bağlar
+  app.js    (~1892 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
 vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 ```
 
@@ -147,11 +152,12 @@ vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 
 | Dosya | Export | Sorumluluk |
 |---|---|---|
-| `data.js` | `TSSData` | Tek gerçek veri kaynağı: lokasyon/araç/durak state'i, localStorage save/load, sefer geçmişi, favoriler, trafik ayarları, Excel içe aktarma normalizasyonu |
+| `data.js` | `TSSData` | Tek gerçek veri kaynağı: lokasyon/araç/durak state'i, localStorage save/load, sefer geçmişi, favoriler, trafik ayarları, TomTom API key, Excel içe aktarma normalizasyonu |
 | `osrm.js` | `TSSOsrm` | `matrix(points)` → mesafe/süre matrisi, `route(points)` → çizim geometrisi |
+| `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination, apiKey)` → canlı trafik dahil tekil bacak süresi/mesafesi/güzergahı (bkz. §10.3) |
 | `weather.js` | `TSSWeather` | `checkPoints(points)` → uyarı listesi, `describePoint(...)` → tekil özet |
-| `optimizer.js` | `TSSOptimizer` | `optimize(options)` → tek araç için en iyi durak sırası + zaman çizelgesi |
-| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği; `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon |
+| `optimizer.js` | `TSSOptimizer` | `optimize(options)` → tek araç için en iyi durak sırası + zaman çizelgesi; `costMetric` ile mesafe ya da süre minimize edilir |
+| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği; `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon; `replayGroupWithLiveLegs(...)` → TomTom'dan gelen canlı bacak verisiyle yeniden simülasyon |
 | `exporter.js` | `TSSExporter` | `toExcel`, `toPdf`, `toExcelHistory`, `toPdfHistory` |
 | `app.js` | (yok, global fonksiyonlar `init()` ile başlar) | DOM event binding, Leaflet haritası, tablo/modal render, tüm kullanıcı etkileşimi |
 
@@ -172,7 +178,8 @@ state = {
   favorites: [ { id, createdAt, name, startLocationId, startLocationName,
                  departure, serviceMinutes, initialLoad, stops:[...] } ],
   traffic:   { enabled, applyRushHourOnWeekends,
-               morning:{start,end,factor}, evening:{...}, night:{...} }
+               morning:{start,end,factor}, evening:{...}, night:{...} },
+  tomtomApiKey: ''  // "En Az Süre" modunda canlı trafik için, bkz. §10.3
 }
 ```
 
@@ -196,13 +203,24 @@ Alan detayları:
 - **`favorites`** bir **sonuç** değil, planlama formunun **girdilerini**
   saklar — yeniden yüklendiğinde rota (araç ataması dahil) o anki güncel
   veriyle tazeden hesaplanır.
+- **`tomtomApiKey`** — kullanıcının Trafik Ayarları modalından girdiği TomTom
+  Developer Portal anahtarı; `setTomTomApiKey()` ile trim'lenerek saklanır.
+  Diğer alanlarla aynı `localStorage` anahtarına yazılır (bkz. §5.2), koda
+  hiçbir zaman gömülmez. Sadece "En Az Süre" optimizasyon modu seçiliyken
+  kullanılır — bkz. §10.3.
+- **Optimizasyon metriği** (`selCostMetric` — "En Kısa Mesafe" / "En Az
+  Süre") **kalıcı değildir**, `state`'in bir parçası değil: `planRoute()`
+  çağrısı sırasında DOM'dan okunup doğrudan `Fleet.assignFleet(...)`'e
+  `costMetric` olarak geçirilir, sayfa yenilenince varsayılan olan
+  "En Kısa Mesafe"ye döner.
 
 ### 5.2 Kalıcılık
 
 - Tek `localStorage` anahtarı: `tss-rota-panel-v1`.
 - `save()` şu alt kümeyi JSON'a çevirip yazar: `locations, vehicles, history,
-  favorites, traffic` (`stops` ve `plan` KALICI DEĞİL — sayfa yenilenince
-  sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı olmamalı).
+  favorites, traffic, tomtomApiKey` (`stops` ve `plan` KALICI DEĞİL — sayfa
+  yenilenince sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı
+  olmamalı).
 - `load()` her alanı ayrı ayrı, eksikse `DEFAULT_*` sabitlerine düşerek okur —
   kısmen bozuk/eksik bir kayıt bile uygulamayı kilitlemez.
 - `localStorage` erişimi başarısız olursa (`try/catch`) sessizce yutulur —
@@ -219,17 +237,28 @@ alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:379-387`).
 
 ## 6. Uçtan uca kullanıcı akışı
 
-1. **Hareket noktası / saat / durak süresi / başlangıç yükü** girilir (sol panel).
+1. **Hareket noktası / saat / durak süresi / başlangıç yükü** ve
+   **Optimizasyon metriği** ("En Kısa Mesafe" veya "En Az Süre") girilir (sol
+   panel, `selCostMetric`) — bkz. §5.1 ve §7.1.
 2. **Durak eklenir**: lokasyon + işlem tipi (yükleme/boşaltma) + palet sayısı.
    Filonun toplam kullanılabilir kapasitesini (`totalFleetCapacity()`) aşan
    girişler `validateStopAddition()` tarafından engellenir.
 3. **"Rotayı Planla"** tıklanır (`app.js:planRoute()`):
    1. `Osrm.matrix(points)` — tüm nokta çiftleri için gerçek mesafe/süre matrisi.
    2. `Fleet.assignFleet(...)` — hangi durağın hangi araca gideceğine karar
-      verir, her araç grubu için `TSSOptimizer.optimize()`'ı çağırır.
+      verir, her araç grubu için `TSSOptimizer.optimize()`'ı çağırır
+      (`costMetric` seçili metriğe göre mesafe ya da OSRM'in süre tahminini
+      minimize eder).
    3. Her grup için `Osrm.route(...)` — haritada çizilecek gerçek güzergah
       geometrisi (GeoJSON) ayrı ayrı alınır.
-   4. `finalizePlan()` — tabloyu, haritayı, hava durumu uyarılarını, filo
+   4. **Sadece "En Az Süre" seçiliyse ve bir TomTom API key kayıtlıysa**:
+      `refineGroupWithLiveTraffic(...)` her grubun zaten belirlenmiş durak
+      sırasındaki ardışık bacaklar için TomTom'dan canlı trafikli süre/mesafe
+      ister ve sonucu `Fleet.replayGroupWithLiveLegs(...)` ile plana işler
+      (sıralama kararı değişmez, sadece süre/mesafe rakamları ve harita
+      geometrisi güncellenir) — bkz. §10.3. Key yoksa veya istek başarısız
+      olursa sessizce OSRM tahminiyle devam edilir.
+   5. `finalizePlan()` — tabloyu, haritayı, hava durumu uyarılarını, filo
       uyarı bandını render eder.
 4. **Elle düzenleme** (onaydan önce, hepsi mevcut sırayı bozmadan
    `TSSFleet.replayGroup()` ile zaman çizelgesini yeniden hesaplar):
@@ -302,10 +331,22 @@ tekrar çağırdığı çekirdek fonksiyon:
 **Maliyet fonksiyonu** (yerel arama bunu minimize etmeye çalışır):
 
 ```
-cost = totalDistance
+baseCost = costMetric === 'duration' ? totalSeconds : totalDistance   // bkz. aşağı
+cost = baseCost
      + capacityViolations × 1e7   // PENALTY_CAPACITY — pratikte asla tercih edilmez
      + timeViolations     × 5e5   // PENALTY_TIME     — mümkünse kaçınılır
 ```
+
+**`costMetric` — hangi büyüklük minimize ediliyor:** `'distance'`
+(varsayılan, önceki davranışla birebir aynı — en kısa km) veya `'duration'`
+(en az süre; sıralama kararı yine OSRM'in matrix'inden çıkan **tahmini**
+süreye göre verilir, canlı trafik değil). Sıralama/2-opt/Or-opt/tam-arama
+mantığının kendisine dokunulmadı — sadece bu adımların minimize etmeye
+çalıştığı sayı (`baseCost`) değişiyor. "En Az Süre" seçildiğinde, `fleet.js`
+üzerinden sıralama belirlendikten **sonra** `app.js` isteğe bağlı olarak
+TomTom'dan gerçek canlı trafik verisi ister (bkz. §10.3) — bu, optimizer'ın
+kendi karar sürecinin bir parçası değildir, sadece sonuç rakamlarını
+günceller.
 
 Bu **soft-penalty** (yumuşak kısıt) yaklaşımı sayesinde kısıt tam
 sağlanamasa bile algoritma her zaman *bir* çözüm üretir; kısıt ihlal edilmiş
@@ -345,16 +386,25 @@ gün içi sabit zaman dilimlerine göre bir **süre çarpanı** uygulanır
 (`trafficFactorAt(clockSec, traffic, isWeekend)`):
 
 ```
-sabah yoğunluğu  07:00–09:30  × 1.8   (varsayılan, ayarlardan değiştirilebilir)
-akşam yoğunluğu  17:00–19:30  × 1.6
-gece (az trafik) 23:00–06:00  × 0.7
+sabah yoğunluğu  07:00–09:30  × 1.8   (varsayılan, DEFAULT_TRAFFIC — ayarlardan değiştirilebilir)
+akşam yoğunluğu  17:00–19:30  × 2.2
+gece (az trafik) 23:00–06:00  × 1.0
 hafta sonu       varsayılan olarak sabah/akşam çarpanları UYGULANMAZ
                  (Trafik Ayarları'ndan "hafta sonu da uygula" açılabilir)
 ```
 
-Yalnızca **süreyi** etkiler, mesafeyi (km) **değiştirmez**. `isWeekendToday()`
-tarayıcının o anki gününe bakar — uygulamada ileri tarihli planlama yok,
-"bugün" sefer planlanıyor varsayılır.
+> Not: "Gece (az trafik)" bandının varsayılan çarpanı **1.0**'dır — yani
+> fabrika ayarında geceleri süreyi hızlandırmaz ya da yavaşlatmaz, sadece
+> etiket olarak ayrılmış bir zaman dilimidir. Gerçekten daha düşük bir gece
+> çarpanı isteniyorsa Trafik Ayarları'ndan elle 1'in altına düşürülmelidir.
+
+Bu çarpanlar yalnızca **süreyi** etkiler, mesafeyi (km) **değiştirmez** —
+ve sadece OSRM tabanlı tahmine uygulanır: "En Az Süre" modunda TomTom'dan
+canlı trafik verisi alınabilirse (bkz. §10.3), o bacaklar için bu sabit
+çarpanlar **hiç uygulanmaz** (`replayGroupWithLiveLegs`, TomTom'un süresi
+zaten canlı trafik dahil olduğundan tekrar çarpmak trafiği iki kez saymak
+olurdu). `isWeekendToday()` tarayıcının o anki gününe bakar — uygulamada
+ileri tarihli planlama yok, "bugün" sefer planlanıyor varsayılır.
 
 ### 7.3 Girdi/çıktı sözleşmesi
 
@@ -365,7 +415,8 @@ TSSOptimizer.optimize({
   serviceMinutes, departureTime,  // "HH:MM"
   initialLoad, capacity,
   returnToStart,                  // true = tek araç modu, false = fleet.js kümesi
-  traffic, isWeekend
+  traffic, isWeekend,
+  costMetric                      // 'distance' (varsayılan) | 'duration', bkz. §7.1
 })
 // → { rows, distance, totalSeconds, finishSec, maxLoad,
 //     capacityViolations, timeViolations, cost, order,
@@ -501,6 +552,21 @@ hesabı), verilen sabit sırayı kullanarak tekrar oynatılır. Bu bilinçli bir
 kod tekrarı: `simulate()` hem "en iyi sırayı bul" hem "zaman çizelgesi üret"
 işini birlikte yapan bir fonksiyon; burada sadece ikincisi gerekiyor.
 
+### 8.6 `replayGroupWithLiveLegs(group, legs, opts)` — TomTom canlı trafik replay'i
+
+`replayGroup`'un bir varyantı: aynı şekilde **sırayı (`group.order`)
+değiştirmez**, ama bacak mesafe/süresini OSRM matrisinden değil,
+**dışarıdan** (`js/app.js` → `refineGroupWithLiveTraffic` → TomTom'dan)
+verilen gerçek değerlerden okur (`legs: [{distanceMeters, durationSeconds}, ...]`,
+`group.order` ile aynı uzunlukta ve sırada). Önemli fark: `legTime`'a
+`optimizer.js`'teki sabit trafik çarpanı **uygulanmaz** — TomTom'un süresi
+zaten canlı trafiği içerdiğinden, üstüne bir de sabit çarpan uygulamak
+trafiği iki kez saymak olurdu. Kapasite/zaman penceresi ihlal mantığı
+(`simulate`/`replayGroup` ile aynı) değişmeden korunur. `js/app.js` bu
+sonucu doğrudan `group.result`'ın yerine koyar ve harita geometrisini de
+TomTom'un döndürdüğü bacak geometrilerinin birleşimiyle günceller — bkz.
+§10.3.
+
 ---
 
 ## 9. Harita katmanı
@@ -557,6 +623,42 @@ snowfall,temperature_2m&timezone=auto&forecast_days=2`
 - Bir konum için istek başarısız olursa o nokta **sessizce atlanır** — hava
   durumu servisi hiçbir zaman rota planlamayı bloke etmez/bozmaz.
 
+### 10.3 TomTom Routing API (`tomtom.js`) — opsiyonel canlı trafik
+
+| Fonksiyon | Endpoint | Kullanım |
+|---|---|---|
+| `routeLeg(origin, destination, apiKey)` | `GET /routing/1/calculateRoute/{lat,lng}:{lat,lng}/json?traffic=true&travelMode=car` | Tek bir bacak için canlı trafik dahil mesafe/süre/güzergah geometrisi |
+
+`BASE = 'https://api.tomtom.com/routing/1/calculateRoute'`. OSRM'in aksine
+**varsayılan olarak kapalıdır**: sadece iki koşul birden sağlanınca devreye
+girer — (1) Optimizasyon metriği **"En Az Süre"** seçili, (2) Trafik
+Ayarları'ndan geçerli bir **TomTom API key** girilmiş. Her iki koşul da
+sağlanmazsa `tomtom.js` hiç çağrılmaz, uygulama tamamen OSRM'in tahmini
+üzerinden çalışmaya devam eder — bu yüzden özelliği hiç kullanmayan bir
+kurulum için davranış **birebir eskisiyle aynıdır**.
+
+**Neden n istek, n² değil:** Sıralama kararının kendisi hâlâ OSRM'in
+ücretsiz/sınırsız `matrix()`'inden çıkıyor (tüm nokta çiftleri). TomTom'a
+sadece optimizer'ın **zaten belirlemiş olduğu** son sıradaki **ardışık**
+bacaklar için istek atılır (`refineGroupWithLiveTraffic`, `js/app.js`) —
+bir grupta *n* durak varsa *n* istek, tüm nokta çiftleri için değil. Bu,
+TomTom'un ücretli/kotalı olması nedeniyle bilinçli bir maliyet kısıtlaması.
+
+**Best-effort davranış:** Herhangi bir bacak isteği başarısız olursa
+(geçersiz key, kota aşımı, ağ hatası) **tüm grup için** sessizce vazgeçilir
+ve OSRM'in zaten hesaplamış olduğu sonuç/geometri aynen kalır — kullanıcıya
+sadece bir toast uyarısı (`'TomTom canlı trafik verisine ulaşılamadı…'`)
+gösterilir, planlama asla başarısız olmaz. Bu, projenin genel "kısıt
+sağlanamasa da her zaman bir rota üret" felsefesiyle tutarlı.
+
+**Güvenlik notu:** Proje backend'siz olduğu için API key kaçınılmaz olarak
+tarayıcıdan (Network sekmesinde, istek URL'sinde) görünür durumdadır. Bu,
+key'i kaynak koduna sabit yazmaktan **farklıdır**: key kullanıcı tarafından
+arayüzden (Trafik Ayarları → TomTom API Key, `type="password"` input) girilir,
+sadece o tarayıcının `localStorage`'ında tutulur (bkz. §5), hiçbir dosyaya/
+repoya gömülmez. Yine de TomTom panelinden key'e **domain kısıtlaması**
+eklenmesi önerilir (bkz. §12).
+
 ---
 
 ## 11. Excel / PDF dışa aktarım
@@ -599,6 +701,14 @@ snowfall,temperature_2m&timezone=auto&forecast_days=2`
   bağlamında tutulduğu için sunucu tarafı yetkilendirme/doğrulama yok —
   bu, uygulamanın **tek kullanıcılı/dahili araç** olarak tasarlandığının
   bir yansıması (bkz. §13).
+- **TomTom API key:** `localStorage`'da düz metin olarak saklanır (diğer
+  hiçbir alan gibi şifrelenmez) ve her istekte URL query string'i olarak
+  (Network sekmesinde görünür şekilde) gönderilir — sunucu tarafı bir proxy
+  olmadığı için kaçınılmaz bir mimari sınır. Aynı tarayıcıyı/cihazı paylaşan
+  başka biri bu key'i DevTools'tan okuyabilir. Azaltıcı önlem: key sahibi
+  TomTom Developer Portal'dan key'e **domain/referrer kısıtlaması**
+  eklemeli, böylece key başka bir yerden çalınsa bile sadece bu uygulamanın
+  çalıştığı origin'den kullanılabilir kalır (bkz. §10.3).
 
 ---
 
@@ -613,7 +723,8 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Sadece `localStorage` kalıcılık | Backend/DB yok | Tek tarayıcıya bağlı, ekip içi paylaşım yok, veri kaybı riski |
 | Yasak güzergah kısıtı yok | OSRM demo sunucusu özel `exclude` profili desteklemiyor | Köprü/tonaj kısıtları rotaya yansımaz — sadece onay notuna elle yazılabilir |
 | Kümeleme kesin optimum değil | Sezgisel farthest-point seeding, tek geçiş | Çok sayıda dağınık durakta teorik en iyi bölüştürme garanti edilmez |
-| Trafik verisi gerçek değil | Backend/API maliyeti yok | Sabit zaman dilimi çarpanlarıyla kaba tahmin |
+| Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
+| TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
 | Otomatik test yok | — | `optimizer.js`/`fleet.js` değişikliklerinde regresyon elle test edilmeli |
 
 ---
@@ -636,12 +747,18 @@ dahili/demo araç olarak kalabilir. İleride biri canlıya almaya karar verirse
    girdi (durak listesi + mesafe matrisi) → beklenen sıralama/ihlal
    çıktısı; bu iki dosya saf fonksiyonlar olduğu için (DOM'a bağımlı değil)
    test edilmesi kolay, sadece hiç yapılmamış.
-4. Yasak güzergah kısıtı, gerçek trafik verisi (bir trafik API'siyle) gibi
-   README'de "sonraki faz" olarak işaretlenmiş genişletmeler.
+4. Yasak güzergah kısıtı gibi README'de "sonraki faz" olarak işaretlenmiş
+   genişletmeler. Gerçek trafik verisi için TomTom entegrasyonu (§10.3)
+   kısmen bu ihtiyacı karşılıyor — bir sonraki adım bunu "En Az Süre"
+   modunun ötesine, sıralama kararının kendisine de (şu an sadece OSRM
+   matrix'i kullanılıyor) taşımak olabilir, ancak bu TomTom'un ücretli
+   matrix endpoint'ini gerektirir.
 
 ---
 
-*Bu doküman, kod tabanının mevcut hali (2026-08-31 itibarıyla) üzerinden
-elle incelenerek hazırlanmıştır. Kaynak dosyalar değiştikçe güncel
-tutulmalıdır — özellikle §7/§8'deki algoritma açıklamaları
-`optimizer.js`/`fleet.js`'in birebir güncel haliyle senkron kalmalı.*
+*Bu doküman, kod tabanının mevcut hali (2026-09-01 itibarıyla, TomTom canlı
+trafik entegrasyonu ve "En Az Süre" optimizasyon modu dahil) üzerinden elle
+incelenerek hazırlanmıştır/revize edilmiştir. Kaynak dosyalar değiştikçe
+güncel tutulmalıdır — özellikle §7/§8/§10.3'teki algoritma ve entegrasyon
+açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in birebir güncel
+haliyle senkron kalmalı.*
