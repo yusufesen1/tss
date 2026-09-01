@@ -791,6 +791,27 @@ eklenmesi önerilir (bkz. §12).
 
 ## 11. Excel / PDF dışa aktarım
 
+### 11.0 Sefer Geçmişi filtresi
+
+Sefer Geçmişi modalındaki **"Filtrele"** butonu bir form paneli açar/kapatır
+(`app.js` → `historyFilter` modül state'i, panel gizliyken bile korunur —
+modal kapatılıp tekrar açılsa filtre durur). Tarih aralığı, araç (geçmişteki
+tüm plakalardan türetilen bir `<select>`), min/maks mesafe ve min/maks süre
+ile filtrelenir; her alan değiştikçe (`input`/`change`) `applyHistoryFilter()`
+tabloyu **canlı** yeniden çizer.
+
+- `h.distance`/`h.duration` (`data.js` → `approveTrip()`) zaten biçimlendirilmiş
+  string olarak saklanıyor ("93.6 km", "3 sa 22 dk") — `parseKmValue()` /
+  `parseDurationMinutes()` bunları karşılaştırma için geri sayıya çevirir.
+- **Excel/PDF dışa aktarımı filtrelenmiş listeyi indirir**: `btnExportHistoryExcel`/
+  `btnExportHistoryPdf`, `D.getHistory()`'yi değil `applyHistoryFilter(D.getHistory())`
+  sonucunu `Exp.toExcelHistory`/`Exp.toPdfHistory`'ye geçirir. Filtre paneli hiç
+  açılmadıysa `historyFilter` tüm alanları boş olduğundan bu, tüm geçmişi
+  değişmeden döndürür — davranış filtre kullanılmadığında birebir eskisiyle aynı.
+  PDF'teki 4 KPI kartı (`computeHistoryStats`, bkz. §11.2) da bu yüzden
+  otomatik olarak filtrelenmiş alt kümeyi yansıtır, ayrı bir değişiklik
+  gerekmedi.
+
 ### 11.1 Excel (`toExcel`, `toExcelHistory`)
 
 - SheetJS (`XLSX.utils.aoa_to_sheet`) ile satır-dizisi → sayfa.

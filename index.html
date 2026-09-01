@@ -281,12 +281,53 @@
     <div class="modal-header">
       <h3 class="modal-title">Sefer Geçmişi</h3>
       <div class="export-actions">
+        <button class="btn btn-neutral btn-sm" id="btnHistoryFilter">Filtrele</button>
         <button class="btn btn-neutral btn-excel btn-sm" id="btnExportHistoryExcel" disabled>Excel</button>
         <button class="btn btn-neutral btn-sm" id="btnExportHistoryPdf" disabled>PDF</button>
         <button class="btn btn-neutral btn-sm" data-close-modal="modalHistory">Kapat</button>
       </div>
     </div>
     <div class="modal-body">
+
+      <div class="form-card" id="historyFilterPanel" hidden>
+        <div class="field-row field-row-3">
+          <div class="field-group">
+            <label class="label label-sm" for="hfFromDate">Başlangıç Tarihi</label>
+            <input type="date" id="hfFromDate" class="input input-sm" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="hfToDate">Bitiş Tarihi</label>
+            <input type="date" id="hfToDate" class="input input-sm" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="hfVehicle">Araç</label>
+            <select id="hfVehicle" class="input input-sm"><option value="">Tümü</option></select>
+          </div>
+        </div>
+        <div class="field-row field-row-4">
+          <div class="field-group">
+            <label class="label label-sm" for="hfMinDistance">Min. Mesafe (km)</label>
+            <input type="number" id="hfMinDistance" class="input input-sm" min="0" step="0.1" placeholder="0" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="hfMaxDistance">Maks. Mesafe (km)</label>
+            <input type="number" id="hfMaxDistance" class="input input-sm" min="0" step="0.1" placeholder="—" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="hfMinDuration">Min. Süre (dk)</label>
+            <input type="number" id="hfMinDuration" class="input input-sm" min="0" step="5" placeholder="0" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="hfMaxDuration">Maks. Süre (dk)</label>
+            <input type="number" id="hfMaxDuration" class="input input-sm" min="0" step="5" placeholder="—" />
+          </div>
+        </div>
+        <div class="import-row">
+          <span class="hint" id="historyFilterHint"></span>
+          <button class="btn btn-neutral btn-sm" id="btnHistoryFilterClear">Filtreyi Temizle</button>
+        </div>
+      </div>
+
       <table class="data-table history-table">
         <colgroup>
           <col style="width:18%">

@@ -22,6 +22,12 @@
   // OSRM isteği atmadan) hesaplayabilsin diye. planRoute() başarıyla matrix
   // aldığında set edilir, clearPlan()'da temizlenir.
   var lastPlanningContext = null;
+  // Sefer Geçmişi filtre paneli — modal her açıldığında sıfırlanmaz, sekme
+  // içinde kalıcıdır (kullanıcı modalı kapatıp tekrar açsa filtre durur).
+  var historyFilter = {
+    fromDate: '', toDate: '', vehicle: '',
+    minDistance: '', maxDistance: '', minDuration: '', maxDuration: ''
+  };
 
   var el = {};
 
@@ -1734,13 +1740,85 @@
            p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
+  /* ---------------------------------------------------------
+     Sefer Geçmişi filtresi
+     ---------------------------------------------------------
+     h.distance/h.duration data.js'te ("93.6 km", "3 sa 22 dk") zaten
+     biçimlendirilmiş string olarak saklanıyor (approveTrip, bkz. data.js) —
+     min/maks karşılaştırması için buradan geri sayıya ayrıştırılıyor. */
+  function parseKmValue(str) {
+    var m = /([\d.]+)/.exec(String(str || ''));
+    return m ? parseFloat(m[1]) : 0;
+  }
+
+  function parseDurationMinutes(str) {
+    var s = String(str || '');
+    var h = /(\d+)\s*sa/.exec(s);
+    var m = /(\d+)\s*dk/.exec(s);
+    return (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0);
+  }
+
+  function applyHistoryFilter(history) {
+    var f = historyFilter;
+    var fromMs = f.fromDate ? new Date(f.fromDate + 'T00:00:00').getTime() : null;
+    var toMs = f.toDate ? new Date(f.toDate + 'T23:59:59').getTime() : null;
+    return history.filter(function (h) {
+      if (fromMs !== null && h.approvedAt < fromMs) return false;
+      if (toMs !== null && h.approvedAt > toMs) return false;
+      if (f.vehicle) {
+        var plates = (h.vehicles || []).map(function (v) { return v.plate; });
+        if (plates.indexOf(f.vehicle) === -1) return false;
+      }
+      var distKm = parseKmValue(h.distance);
+      if (f.minDistance !== '' && distKm < Number(f.minDistance)) return false;
+      if (f.maxDistance !== '' && distKm > Number(f.maxDistance)) return false;
+      var durMin = parseDurationMinutes(h.duration);
+      if (f.minDuration !== '' && durMin < Number(f.minDuration)) return false;
+      if (f.maxDuration !== '' && durMin > Number(f.maxDuration)) return false;
+      return true;
+    });
+  }
+
+  // "Araç" filtre seçeneklerini TÜM (filtrelenmemiş) geçmişteki plakalardan
+  // türetir — aksi halde filtre daraldıkça diğer seçenekler listeden
+  // kaybolurdu. Mevcut seçim varsa (liste yeniden kurulurken) korunur.
+  function populateHistoryVehicleFilter(fullHistory) {
+    var select = $('hfVehicle');
+    var current = select.value;
+    var plates = [];
+    fullHistory.forEach(function (h) {
+      (h.vehicles || []).forEach(function (v) {
+        if (v.plate && plates.indexOf(v.plate) === -1) plates.push(v.plate);
+      });
+    });
+    plates.sort();
+    select.innerHTML = '<option value="">Tümü</option>';
+    plates.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      select.appendChild(opt);
+    });
+    if (plates.indexOf(current) !== -1) select.value = current;
+  }
+
   function renderHistoryTable() {
     var body = $('historyTableBody');
     body.innerHTML = '';
-    var history = D.getHistory();
+    var fullHistory = D.getHistory();
+    populateHistoryVehicleFilter(fullHistory);
+    var history = applyHistoryFilter(fullHistory);
+    var filterActive = history.length !== fullHistory.length;
+
     $('historyEmpty').hidden = history.length > 0;
+    $('historyEmpty').textContent = !fullHistory.length
+      ? 'Henüz onaylanmış bir sefer yok. Rota tablosundan "Rotayı onayla" ile kaydedebilirsin.'
+      : 'Filtreyle eşleşen sefer yok.';
     $('btnExportHistoryExcel').disabled = history.length === 0;
     $('btnExportHistoryPdf').disabled = history.length === 0;
+    $('historyFilterHint').textContent = filterActive
+      ? history.length + ' / ' + fullHistory.length + ' sefer gösteriliyor — Excel/PDF bu filtrelenmiş listeyi indirir.'
+      : fullHistory.length + ' sefer';
 
     history.forEach(function (h) {
       var tr = document.createElement('tr');
@@ -1861,9 +1939,13 @@
       openModal('modalHistory');
     });
     el.btnCompare.addEventListener('click', openCompareModal);
+    // Excel/PDF her zaman o an ekranda görünen (filtre uygulanmışsa
+    // filtrelenmiş) listeyi indirir — filtre paneli hiç açılmadıysa
+    // historyFilter boş olduğundan applyHistoryFilter tüm geçmişi
+    // değişmeden döndürür.
     $('btnExportHistoryExcel').addEventListener('click', function () {
       try {
-        Exp.toExcelHistory(D.getHistory());
+        Exp.toExcelHistory(applyHistoryFilter(D.getHistory()));
         toast('Sefer geçmişi Excel olarak indirildi.', 'success');
       } catch (err) {
         toast(err.message, 'error');
@@ -1871,11 +1953,48 @@
     });
     $('btnExportHistoryPdf').addEventListener('click', function () {
       try {
-        Exp.toPdfHistory(D.getHistory());
+        Exp.toPdfHistory(applyHistoryFilter(D.getHistory()));
         toast('Sefer geçmişi PDF olarak indirildi.', 'success');
       } catch (err) {
         toast(err.message, 'error');
       }
+    });
+
+    $('btnHistoryFilter').addEventListener('click', function () {
+      var panel = $('historyFilterPanel');
+      panel.hidden = !panel.hidden;
+      this.textContent = panel.hidden ? 'Filtrele' : 'Filtreyi Gizle';
+    });
+
+    (function bindHistoryFilterInputs() {
+      // <select> (Araç) 'change'; tarih/sayı alanları her tuş vuruşunda
+      // canlı süzülsün diye 'input'.
+      var changeFields = [['hfVehicle', 'vehicle']];
+      var inputFields = [
+        ['hfFromDate', 'fromDate'], ['hfToDate', 'toDate'],
+        ['hfMinDistance', 'minDistance'], ['hfMaxDistance', 'maxDistance'],
+        ['hfMinDuration', 'minDuration'], ['hfMaxDuration', 'maxDuration']
+      ];
+      changeFields.forEach(function (pair) {
+        $(pair[0]).addEventListener('change', function () {
+          historyFilter[pair[1]] = this.value;
+          renderHistoryTable();
+        });
+      });
+      inputFields.forEach(function (pair) {
+        $(pair[0]).addEventListener('input', function () {
+          historyFilter[pair[1]] = this.value;
+          renderHistoryTable();
+        });
+      });
+    })();
+
+    $('btnHistoryFilterClear').addEventListener('click', function () {
+      historyFilter = { fromDate: '', toDate: '', vehicle: '', minDistance: '', maxDistance: '', minDuration: '', maxDuration: '' };
+      ['hfFromDate', 'hfToDate', 'hfVehicle', 'hfMinDistance', 'hfMaxDistance', 'hfMinDuration', 'hfMaxDuration'].forEach(function (id) {
+        $(id).value = '';
+      });
+      renderHistoryTable();
     });
 
     $('btnTrafficSettings').addEventListener('click', function () {
