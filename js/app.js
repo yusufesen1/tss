@@ -506,6 +506,14 @@
     var fleetCap = D.totalFleetCapacity();
     if (fleetCap <= 0) return 'Sistemde kullanılabilir kapasitesi olan araç yok.';
 
+    // NOT: Tek bir durağın palet miktarı filodaki en büyük aracın kapasitesini
+    // aşabilir — bu ARTIK burada engellenmiyor. js/fleet.js (assignFleet →
+    // distributeBigStop) böyle bir durağı otomatik olarak birden fazla araca
+    // PAYLAŞTIRIYOR (aynı lokasyona birden fazla araç uğrayıp kendi payını
+    // taşıyor), tıpkı yüklemelerin coğrafi kümelemeyle farklı araçlara
+    // dağıtılması gibi. Sadece filo TOPLAMI gerçekten yetersizse (bkz. aşağı)
+    // ya da yüklenen/boşaltılan toplamlar tutmuyorsa engelleniyor.
+
     if (type === 'pickup') {
       var plannedLoad = initialLoad() + D.totalPickups() + pallets;
       if (plannedLoad > fleetCap) {

@@ -1,0 +1,9 @@
+# Metin dosyalarının satır sonunu repo genelinde LF olarak sabitler.
+# Windows'ta core.autocrlf=true nedeniyle çıkan "LF will be replaced by CRLF"
+# uyarısını ortadan kaldırır — Git artık bu dosyalarda dönüştürme yapmaz.
+* text=auto eol=lf
+
+# İkili dosyalar: Git hiç dönüştürme yapmasın (satır sonu kavramı yok).
+*.png binary
+*.woff2 binary
+*.ttf binary

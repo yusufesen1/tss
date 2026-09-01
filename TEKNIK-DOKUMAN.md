@@ -142,9 +142,9 @@ js/
   tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
   optimizer.js (336 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
-  fleet.js   (412 satır)  ÇOKLU ARAÇ kümeleme + atama (optimizer'ı sarmalar) + canlı trafik replay
+  fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
   exporter.js (458 satır) Excel/PDF üretimi
-  app.js    (~1892 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
+  app.js    (~1900 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
 vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 ```
 
@@ -157,7 +157,7 @@ vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 | `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination, apiKey)` → canlı trafik dahil tekil bacak süresi/mesafesi/güzergahı (bkz. §10.3) |
 | `weather.js` | `TSSWeather` | `checkPoints(points)` → uyarı listesi, `describePoint(...)` → tekil özet |
 | `optimizer.js` | `TSSOptimizer` | `optimize(options)` → tek araç için en iyi durak sırası + zaman çizelgesi; `costMetric` ile mesafe ya da süre minimize edilir |
-| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği; `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon; `replayGroupWithLiveLegs(...)` → TomTom'dan gelen canlı bacak verisiyle yeniden simülasyon |
+| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği (filodaki hiçbir tek aracın kapasitesini aşan durakları birden fazla araca otomatik böler, bkz. §8.6); `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon; `replayGroupWithLiveLegs(...)` → TomTom'dan gelen canlı bacak verisiyle yeniden simülasyon |
 | `exporter.js` | `TSSExporter` | `toExcel`, `toPdf`, `toExcelHistory`, `toPdfHistory` |
 | `app.js` | (yok, global fonksiyonlar `init()` ile başlar) | DOM event binding, Leaflet haritası, tablo/modal render, tüm kullanıcı etkileşimi |
 
@@ -242,7 +242,10 @@ alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:379-387`).
    panel, `selCostMetric`) — bkz. §5.1 ve §7.1.
 2. **Durak eklenir**: lokasyon + işlem tipi (yükleme/boşaltma) + palet sayısı.
    Filonun toplam kullanılabilir kapasitesini (`totalFleetCapacity()`) aşan
-   girişler `validateStopAddition()` tarafından engellenir.
+   girişler `validateStopAddition()` tarafından engellenir. Tek bir durağın
+   palet miktarı filodaki en büyük tek aracı aşabilir — bu **engellenmez**:
+   `js/fleet.js` böyle bir durağı planlama sırasında otomatik olarak birden
+   fazla araca **paylaştırır** (bkz. §8.6).
 3. **"Rotayı Planla"** tıklanır (`app.js:planRoute()`):
    1. `Osrm.matrix(points)` — tüm nokta çiftleri için gerçek mesafe/süre matrisi.
    2. `Fleet.assignFleet(...)` — hangi durağın hangi araca gideceğine karar
@@ -443,20 +446,35 @@ hangi araca gideceğine karar veren ayrı bir katman.
                                  │ Hayır
                                  ▼
                      ┌─────────────────────────┐
-                     │ k=2'den başlayarak       │
-                     │ coğrafi kümeleme dene,   │
+                     │ "Büyük" duraklar ayrılır │  filodaki EN BÜYÜK tek aracın
+                     │ (bkz. §8.6)              │  kapasitesini aşan pickup/delivery'ler
+                     └───────────┬──────────────┘
+                                 ▼
+                     ┌─────────────────────────┐
+                     │ k=2'den başlayarak,      │  SADECE normal (büyük olmayan)
+                     │ coğrafi kümeleme dene,   │  duraklar üzerinde
                      │ her k için best-fit-     │
                      │ decreasing atama dene    │──── Başarılı ──▶ o atamayı kullan
                      │ (k++ gerektikçe artar)   │
                      └───────────┬──────────────┘
                                  │ Hiçbir k için filoya sığmadı
                                  ▼
-                     En büyük araca TÜM duraklar verilir,
-                     en iyi (ihlalli) rota yine üretilir,
-                     ihlaller tabloda/haritada işaretlenir.
+                     Normal duraklar TEK küme olarak bunu karşılayabilecek
+                     en küçük (yoksa en büyük) araca verilir.
+                                 │
+                                 ▼
+                     ┌─────────────────────────┐
+                     │ BFD'nin seçMEDİĞİ araçlar│  büyük durak dağıtımı TÜM
+                     │ da boş küme olarak açılır│  filoyu görebilsin diye
+                     └───────────┬──────────────┘
+                                 ▼
+                     Büyük duraklar, oluşan kümelerin boş yerine/arzına göre
+                     distributeBigStop() ile paylaştırılır (bkz. §8.6).
+                     Filo toplamda bile yetmezse kalan miktar en uygun araca
+                     zorla eklenir, ihlal tabloda/haritada işaretlenir.
 ```
 
-### 8.2 Coğrafi kümeleme — `clusterStopIndices(stops, fullDistances, k)`
+### 8.2 Coğrafi kümeleme — `clusterStopIndices(indices, fullDistances, k)`
 
 **En-uzak-nokta (farthest-point) tohumlamalı k-means benzeri** bir kümeleme:
 
@@ -474,11 +492,32 @@ iki nokta bir boğaz/nehir/otoyol nedeniyle yol mesafesinde çok uzak olabilir.
 > README'de belirtildiği gibi bu **sezgiseldir, kesin optimum bölüştürme
 > garanti etmez** — küçük durak sayılarında iyi çalışır.
 
+`indices` parametresi artık **orijinal `stops` dizisindeki index'lerden
+oluşan bir alt küme** (eskiden doğrudan `stops` dizisinin kendisiydi) —
+`assignFleet` buraya SADECE "normal" (büyük olmayan) durakların index'lerini
+geçirir; "büyük" duraklar coğrafi kümelemeye hiç girmez, bkz. §8.6.
+
 ### 8.3 Araç eşleme — best-fit-decreasing + rotasyon
 
-Her küme için önce `runOptimizeForSubset(..., capacity: Infinity, ...)` ile
-**gerçekte ihtiyaç duyulan maksimum yük** (`maxLoad`) hesaplanır (kapasite
-sınırı olmadan sırala, sonra gerçek ihtiyacı öğren). Sonra:
+Her küme için önce `requiredCapacityFor(sub, initialLoad)` ile **gerçekte
+ihtiyaç duyulan minimum kapasite** hesaplanır: başlangıç yükü + kümedeki tüm
+yükleme (pickup) miktarlarının toplamı — yani "önce tüm yüklemeler yapılsa"
+sıralamasıyla ulaşılan tepe yük. Bu sıra her zaman fiilen uygulanabilir
+olduğundan (mesafeden bağımsız, sadece sıralamayı değiştirir) güvenilir bir
+ihtiyaç tahminidir. Sonra:
+
+> **Düzeltilmiş hata (2026-09-01):** Daha önce bu değer
+> `runOptimizeForSubset(..., capacity: Infinity, ...)` ile, yani `Opt.optimize()`'ı
+> sınırsız kapasiteyle çalıştırıp sonucun `maxLoad`'ını okuyarak hesaplanıyordu.
+> Kapasite sınırsızken hiçbir sıra "ihlalli" sayılmadığından optimizer sırayı
+> **sadece mesafeye göre** seçiyordu — bir boşaltma durağı hareket noktasıyla
+> aynı/çok yakın koordinattaysa (mesafe ≈ 0), optimizer onu sıranın en başına
+> alıyor, yük hiç pozitife çıkmadan direkt eksiye düşüyordu. Sonuç: `maxLoad`
+> yanlışlıkla ~0 çıkıyor ve o kümeye filodaki **en küçük** araç (gerçek
+> ihtiyacın çok altında bir kapasiteyle) atanıyordu — örn. 9 paletlik bir
+> boşaltmanın olduğu bir kümeye 1 paletlik araç verilmesi. `requiredCapacityFor`
+> bu tuzağa hiç girmez çünkü hiç rota optimize etmez, doğrudan pickup
+> toplamından hesaplar.
 
 ```js
 reqs.sort(required azalan)  // en çok ihtiyacı olan küme önce (best-fit-DEcreasing)
@@ -552,7 +591,60 @@ hesabı), verilen sabit sırayı kullanarak tekrar oynatılır. Bu bilinçli bir
 kod tekrarı: `simulate()` hem "en iyi sırayı bul" hem "zaman çizelgesi üret"
 işini birlikte yapan bir fonksiyon; burada sadece ikincisi gerekiyor.
 
-### 8.6 `replayGroupWithLiveLegs(group, legs, opts)` — TomTom canlı trafik replay'i
+### 8.6 Büyük durak bölüştürme — `distributeBigStop()`
+
+Bir durağın (tek bir pickup ya da delivery) palet miktarı filodaki **en
+büyük tek aracın** kullanılabilir kapasitesini aşarsa ("büyük durak"), bu
+durak hiçbir araca **tek başına** sığmaz. Ama paletler fungible olduğundan
+(hangi paletin nereden geldiği hiç izlenmiyor) filo **toplamda** yeterliyse
+hâlâ karşılanabilir: birden fazla araç aynı lokasyona uğrayıp kendi payını
+taşır — tıpkı gerçek bir lojistik operasyonunda büyük bir sevkiyatın birden
+fazla kamyona bölünmesi gibi.
+
+**Akış (`assignFleet` içinde):**
+
+```
+1. maxSingleCapacity = filodaki en büyük tek aracın kapasitesi
+2. bigIndices  = pallets > maxSingleCapacity olan duraklar
+   normalIndices = geri kalan (normal boyuttaki) duraklar
+3. §8.1-8.3'teki kümeleme + BFD SADECE normalIndices üzerinde çalışır
+   (büyük duraklar coğrafi kümelemeye hiç girmez — aynı lokasyondaki
+   birden fazla parçası aksi halde hep AYNI kümeye düşerdi, bu da
+   bölmenin amacını boşa çıkarırdı)
+4. BFD'nin seçMEDİĞİ araçlar da (o an ortada büyük durak yokmuş gibi karar
+   verdiği için boşta kalanlar) boş birer küme olarak açılır — büyük durak
+   dağıtımı TÜM filoyu görebilsin diye
+5. distributeBigStop(): önce büyük YÜKLEMELER (kümenin taşıdığı toplam yükü
+   artırır), sonra büyük BOŞALTMALAR (o yükten ne kadarının boşaltılabi-
+   leceğini belirler) — en yakın kümeden başlayarak açgözlü (greedy) doldurma:
+     - YÜKLEME payı ≤ kümenin aracındaki BOŞ YER (usable − o an taşınan yük)
+     - BOŞALTMA payı ≤ kümenin o ana kadar TOPLADIĞI ama henüz boşaltmadığı
+       miktar (kendi ARZI)
+6. Filo toplamda bile yetmezse, karşılanamayan kalan miktar en çok yeri/
+   arzı olan (eşitlikte en büyük) araca zorla eklenir — ihlal tabloda görünür
+   kalır, ama artık TÜM miktar değil, sadece gerçekten karşılanamayan kısım;
+   `assignFleet` bunu `warning` alanında ayrıca bildirir.
+```
+
+**Örnek:** 9 paletlik tek bir boşaltma durağı, dört ayrı lokasyondan toplam
+9 palet yükleyen (1+3+2+3) bir plan — filodaki en büyük araç 5 palet.
+Coğrafi kümeleme yüklemeleri iki araca ayırır (paletleri 4 ve 5 olacak
+şekilde); `distributeBigStop` 9 paletlik boşaltmayı bu iki kümenin kendi
+arzına göre **5 + 4** olarak böler — her iki araç da kendi topladığı kadarını
+boşaltır, **sıfır ihlal**.
+
+**Bilinç sınırları:** Bu, gerçek bir VRP çözücü değil, açgözlü bir sezgisel.
+`sub`/`idxArr`'a eklenen parça-durak nesnelerinin `stopId` alanı **bilerek
+`null`** bırakılır — `updateGroupStopPallets()` (`js/app.js`) bir satırdaki
+palet sayısını `stopId` üzerinden orijinal `TSSData.state.stops`'a geri
+yazar; aynı orijinal durağın İKİ farklı gruba bölünmüş parçası aynı
+`stopId`'yi paylaşsaydı, bir parçanın elle düzenlenmesi orijinal durağın
+toplamını yanlışlıkla ezerdi. `stopId: null` ile bu tür elle düzenlemeler
+sadece o grubun kendi anlık simülasyonunu etkiler, sol paneldeki "Duraklar"
+listesini (kaynak veri) hiç değiştirmez. Nadir kombinasyonlarda (bkz. §13)
+hâlâ önlenemeyen bir kalıntı ihlal görülebilir.
+
+### 8.7 `replayGroupWithLiveLegs(group, legs, opts)` — TomTom canlı trafik replay'i
 
 `replayGroup`'un bir varyantı: aynı şekilde **sırayı (`group.order`)
 değiştirmez**, ama bacak mesafe/süresini OSRM matrisinden değil,
@@ -723,6 +815,7 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Sadece `localStorage` kalıcılık | Backend/DB yok | Tek tarayıcıya bağlı, ekip içi paylaşım yok, veri kaybı riski |
 | Yasak güzergah kısıtı yok | OSRM demo sunucusu özel `exclude` profili desteklemiyor | Köprü/tonaj kısıtları rotaya yansımaz — sadece onay notuna elle yazılabilir |
 | Kümeleme kesin optimum değil | Sezgisel farthest-point seeding, tek geçiş | Çok sayıda dağınık durakta teorik en iyi bölüştürme garanti edilmez |
+| Büyük durak bölüştürme sezgiseldir, kesin optimum değil | `distributeBigStop()` en-yakın-kümeden-başlayarak açgözlü (greedy) doldurma yapar (bkz. §8.6), gerçek bir VRP çözücü değil | Nadir kombinasyonlarda (örn. `initialLoad` bir kümenin ihtiyacını tek başına her aracın kapasitesinin üstüne çıkarıyorsa, ya da tüm arzı sağlayan tek bir büyük yükleme normal boşaltmalardan coğrafi olarak uzaksa) hâlâ önlenebilir olmayan bir kalıntı ihlal görülebilir — filo toplamda yeterliyken bile. Algoritma bunu her zaman **mümkün olan en az** ihlale indirger ve `warning` alanında açıkça bildirir, ama sıfıra indirme garantisi yoktur |
 | Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
 | TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
 | Otomatik test yok | — | `optimizer.js`/`fleet.js` değişikliklerinde regresyon elle test edilmeli |
