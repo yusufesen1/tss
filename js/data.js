@@ -40,7 +40,6 @@
     stops: [],          // { id, locationId, type: 'pickup'|'delivery', pallets }
     plan: null,         // hesaplanan rota sonucu
     history: [],        // onaylanan seferlerin kalıcı kaydı
-    favorites: [],       // kaydedilmiş rota şablonları (bkz. addFavorite)
     traffic: null,       // trafik katsayısı ayarları (kalıcı)
     tomtomApiKey: ''     // "En Az Süre" modunda canlı trafik için — kullanıcı girer,
                           // sadece bu tarayıcıda saklanır, koda hiç gömülmez
@@ -56,7 +55,6 @@
         locations: state.locations,
         vehicles: state.vehicles,
         history: state.history,
-        favorites: state.favorites,
         traffic: state.traffic,
         tomtomApiKey: state.tomtomApiKey
       }));
@@ -84,8 +82,6 @@
     }
 
     state.history = (stored && Array.isArray(stored.history)) ? stored.history : [];
-
-    state.favorites = (stored && Array.isArray(stored.favorites)) ? stored.favorites : [];
 
     state.traffic = (stored && stored.traffic) ? stored.traffic : JSON.parse(JSON.stringify(DEFAULT_TRAFFIC));
 
@@ -156,6 +152,20 @@
     state.locations = state.locations.filter(function (l) { return l.id !== id; });
     state.stops = state.stops.filter(function (s) { return s.locationId !== id; });
     save();
+  }
+
+  // Sadece ad ve erişim saatlerini (from/until) günceller — koordinatlar
+  // buradan değişmez (bkz. app.js renderLocationTable, "Düzenle" satırı).
+  function updateLocation(id, data) {
+    var loc = getLocation(id);
+    if (!loc) return null;
+    var name = String(data.name || '').trim();
+    if (!name) throw new Error('Lokasyon adı boş olamaz.');
+    loc.name = name;
+    loc.from = data.from || '00:00';
+    loc.until = data.until || '23:59';
+    save();
+    return loc;
   }
 
   function getLocation(id) {
@@ -347,46 +357,6 @@
     save();
   }
 
-  // --- Favori rotalar ---
-  // Sefer geçmişinin aksine bunlar hesaplanmış bir SONUÇ değil, planlama
-  // formunun o anki GİRDİLERİ (başlangıç, saat, duraklar…) — yeniden
-  // seçildiğinde aynı girdilerle rota tekrar hesaplanır (araç ataması,
-  // trafik katsayısı vb. o anki güncel verilerle taze üretilir).
-  function addFavorite(data) {
-    var name = String(data.name || '').trim();
-    if (!name) throw new Error('Rota adı boş olamaz.');
-    var fav = {
-      id: uid('fav'),
-      createdAt: Date.now(),
-      name: name,
-      startLocationId: data.startLocationId,
-      startLocationName: data.startLocationName || '',
-      departure: data.departure || '08:00',
-      serviceMinutes: Math.max(0, Math.floor(Number(data.serviceMinutes) || 0)),
-      initialLoad: Math.max(0, Math.floor(Number(data.initialLoad) || 0)),
-      stops: (data.stops || []).map(function (s) {
-        return {
-          locationId: s.locationId,
-          locationName: s.locationName || '',
-          type: s.type,
-          pallets: Math.max(1, Math.floor(Number(s.pallets) || 1))
-        };
-      })
-    };
-    state.favorites.unshift(fav);
-    save();
-    return fav;
-  }
-
-  function getFavorites() {
-    return state.favorites;
-  }
-
-  function removeFavorite(id) {
-    state.favorites = state.favorites.filter(function (f) { return f.id !== id; });
-    save();
-  }
-
   // --- Excel içe aktarma yardımcıları ---
   function normalizeKey(key) {
     return String(key)
@@ -462,6 +432,7 @@
     setTomTomApiKey: setTomTomApiKey,
     addLocation: addLocation,
     removeLocation: removeLocation,
+    updateLocation: updateLocation,
     getLocation: getLocation,
     addVehicle: addVehicle,
     removeVehicle: removeVehicle,
@@ -475,9 +446,6 @@
     approveTrip: approveTrip,
     getHistory: getHistory,
     removeHistoryEntry: removeHistoryEntry,
-    addFavorite: addFavorite,
-    getFavorites: getFavorites,
-    removeFavorite: removeFavorite,
     totalPickups: totalPickups,
     totalDeliveries: totalDeliveries,
     totalFleetCapacity: totalFleetCapacity,

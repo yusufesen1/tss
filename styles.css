@@ -149,8 +149,8 @@ h2, h3{ margin: 0; font-weight: 700; }
   border-radius: 0 0 var(--r-card) var(--r-card);
 }
 
-/* İki eylemi (ör. Rotayı Favorilere Ekle + Rotayı Onayla) eşit genişlikte
-   yan yana dizmek için — panel footer'da ve modallerde kullanılıyor. */
+/* Birden fazla eylem butonunu eşit genişlikte yan yana dizmek için —
+   panel footer'da ve modallerde kullanılıyor. */
 .btn-row{ display: flex; gap: 8px; }
 .btn-row .btn{ flex: 1 1 0; }
 
@@ -583,7 +583,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 
 /* Sabit sütun genişlikleri: satır içi düzenleme (input'lu satır) tabloyu
    yeniden akıtıp başlıklarla veriyi kaydırmasın diye. */
-.vehicle-table, .history-table, .traffic-table, .route-table, .favorite-table{ table-layout: fixed; }
+.vehicle-table, .history-table, .traffic-table, .route-table{ table-layout: fixed; }
 /* route-table (rota sonuç tablosu) 9 dar sütuna sahip; başlıkların
    nowrap kalması sabit genişlikte taşmaya (ve panelin altında yatay
    kaydırma çubuğuna) yol açıyordu — burada başlık metninin sarmasına

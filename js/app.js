@@ -15,6 +15,7 @@
   var map, routeLayer, markerLayer;
   var toastTimer = null;
   var editingVehicleId = null;
+  var editingLocationId = null;
   var draggedRowInfo = null; // { group, index } — sürükle-bırakta hangi araç grubunun hangi satırı taşınıyor
 
   var el = {};
@@ -475,10 +476,6 @@
     rebuildOptions();
 
     select._tssWrap = wrap;
-    // Kod (favori rota yükleme gibi) select.value'yu doğrudan atadığında
-    // (bir option ekleme/çıkarma olmadan) MutationObserver tetiklenmez —
-    // bu durumlarda tetikleyicinin görünen metnini elle senkronlamak için.
-    select._tssSync = syncFromSelect;
     return wrap;
   }
 
@@ -911,7 +908,6 @@
     });
 
     el.btnApproveRoute.disabled = !hasGroups;
-    el.btnFavoriteRoute.disabled = !hasGroups;
     el.btnGoogleMaps.disabled = !hasGroups;
     el.btnExportExcel.disabled = !hasGroups;
     el.btnExportPdf.disabled = !hasGroups;
@@ -1225,7 +1221,6 @@
     $('weatherWarnings').hidden = true;
     el.fleetWarning.hidden = true;
     el.btnApproveRoute.disabled = true;
-    el.btnFavoriteRoute.disabled = true;
     el.btnGoogleMaps.disabled = true;
     el.btnExportExcel.disabled = true;
     el.btnExportPdf.disabled = true;
@@ -1243,6 +1238,88 @@
     body.innerHTML = '';
     D.state.locations.forEach(function (loc) {
       var tr = document.createElement('tr');
+      var isEditing = loc.id === editingLocationId;
+
+      if (isEditing) {
+        var tdName = document.createElement('td');
+        var inpName = document.createElement('input');
+        inpName.type = 'text';
+        inpName.className = 'input input-sm';
+        inpName.value = loc.name;
+        tdName.appendChild(inpName);
+        tr.appendChild(tdName);
+
+        // Koordinatlar burada düzenlenmiyor — sadece görüntüleniyor. Enlem/
+        // boylam değiştirmek isteyen, lokasyonu silip haritadan (sağ tık)
+        // veya formdan yeniden eklemeli.
+        var tdLat = document.createElement('td');
+        tdLat.textContent = loc.lat.toFixed(6);
+        tr.appendChild(tdLat);
+        var tdLng = document.createElement('td');
+        tdLng.textContent = loc.lng.toFixed(6);
+        tr.appendChild(tdLng);
+
+        var tdAccess = document.createElement('td');
+        var inpFrom = document.createElement('input');
+        inpFrom.type = 'time';
+        inpFrom.className = 'input input-sm';
+        inpFrom.value = loc.from;
+        var inpUntil = document.createElement('input');
+        inpUntil.type = 'time';
+        inpUntil.className = 'input input-sm';
+        inpUntil.value = loc.until;
+        var accessRow = document.createElement('div');
+        accessRow.style.display = 'flex';
+        accessRow.style.gap = '6px';
+        accessRow.appendChild(inpFrom);
+        accessRow.appendChild(inpUntil);
+        tdAccess.appendChild(accessRow);
+        tr.appendChild(tdAccess);
+
+        var tdAction = document.createElement('td');
+        var btnSave = document.createElement('button');
+        btnSave.className = 'btn-icon';
+        btnSave.textContent = 'Kaydet';
+        btnSave.addEventListener('click', function () {
+          try {
+            D.updateLocation(loc.id, {
+              name: inpName.value,
+              from: inpFrom.value,
+              until: inpUntil.value
+            });
+            editingLocationId = null;
+            renderLocationTable();
+            refreshSelects();
+            renderStops();
+            drawIdleMarkers();
+          } catch (e) {
+            toast(e.message, 'error');
+          }
+        });
+        var btnCancel = document.createElement('button');
+        btnCancel.className = 'btn-icon';
+        btnCancel.textContent = 'İptal';
+        btnCancel.addEventListener('click', function () {
+          editingLocationId = null;
+          renderLocationTable();
+        });
+        tdAction.appendChild(btnSave);
+        tdAction.appendChild(btnCancel);
+        tr.appendChild(tdAction);
+
+        [inpName, inpFrom, inpUntil].forEach(function (inp) {
+          inp.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
+            else if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); }
+          });
+        });
+
+        body.appendChild(tr);
+        inpName.focus();
+        inpName.select();
+        return;
+      }
+
       tr.innerHTML =
         '<td class="cell-name">' + escapeHtml(loc.name) + '</td>' +
         '<td>' + loc.lat.toFixed(6) + '</td>' +
@@ -1250,16 +1327,25 @@
         '<td>' + escapeHtml(loc.from) + ' – ' + escapeHtml(loc.until) + '</td>';
 
       var td = document.createElement('td');
+      var btnEdit = document.createElement('button');
+      btnEdit.className = 'btn-icon';
+      btnEdit.textContent = 'Düzenle';
+      btnEdit.addEventListener('click', function () {
+        editingLocationId = loc.id;
+        renderLocationTable();
+      });
       var btn = document.createElement('button');
       btn.className = 'btn-icon btn-icon-danger';
       btn.textContent = 'Sil';
       btn.addEventListener('click', function () {
         D.removeLocation(loc.id);
+        if (editingLocationId === loc.id) editingLocationId = null;
         renderLocationTable();
         refreshSelects();
         renderStops();
         drawIdleMarkers();
       });
+      td.appendChild(btnEdit);
       td.appendChild(btn);
       tr.appendChild(td);
       body.appendChild(tr);
@@ -1438,89 +1524,6 @@
     });
   }
 
-  function renderFavoritesTable() {
-    var body = $('favoriteTableBody');
-    body.innerHTML = '';
-    var favorites = D.getFavorites();
-    $('favoriteEmpty').hidden = favorites.length > 0;
-
-    favorites.forEach(function (fav) {
-      var tr = document.createElement('tr');
-      var palletTotal = fav.stops.reduce(function (sum, s) { return sum + s.pallets; }, 0);
-
-      var tdName = document.createElement('td');
-      tdName.className = 'cell-name';
-      var nameLine = document.createElement('div');
-      nameLine.textContent = fav.name || fav.startLocationName || 'İsimsiz rota';
-      var metaLine = document.createElement('div');
-      metaLine.className = 'plan-group-meta';
-      metaLine.textContent = (fav.startLocationName || '—') + ' · ' + fav.stops.length + ' durak · ' + palletTotal + ' palet';
-      tdName.appendChild(nameLine);
-      tdName.appendChild(metaLine);
-      tr.appendChild(tdName);
-
-      appendTextCell(tr, formatDateTime(fav.createdAt));
-
-      var tdAction = document.createElement('td');
-      tdAction.className = 'center';
-      var btnLoad = document.createElement('button');
-      btnLoad.className = 'btn-icon';
-      btnLoad.textContent = 'Yükle';
-      btnLoad.addEventListener('click', function () { loadFavorite(fav); });
-      var btnDelete = document.createElement('button');
-      btnDelete.className = 'btn-icon btn-icon-danger';
-      btnDelete.textContent = 'Sil';
-      btnDelete.addEventListener('click', function () {
-        D.removeFavorite(fav.id);
-        renderFavoritesTable();
-      });
-      tdAction.appendChild(btnLoad);
-      tdAction.appendChild(btnDelete);
-      tr.appendChild(tdAction);
-
-      body.appendChild(tr);
-    });
-  }
-
-  // Favori bir rotayı forma uygulayıp rotayı otomatik olarak yeniden
-  // hesaplar — kayıtlı lokasyonlar silinmiş olabileceğinden önce doğrular.
-  function loadFavorite(fav) {
-    var startLocation = D.getLocation(fav.startLocationId);
-    if (!startLocation) {
-      toast('Bu favorideki başlangıç lokasyonu artık mevcut değil.', 'error');
-      return;
-    }
-    var validStops = fav.stops.filter(function (s) { return D.getLocation(s.locationId); });
-    if (!validStops.length) {
-      toast('Bu favorideki duraklar artık mevcut değil.', 'error');
-      return;
-    }
-    if (validStops.length < fav.stops.length) {
-      toast('Bazı duraklar artık mevcut değil — kalanlarla yükleniyor.', 'error');
-    }
-
-    setSelectValue(el.selStart, fav.startLocationId);
-    el.inpDeparture.value = fav.departure;
-    el.inpService.value = fav.serviceMinutes;
-    el.inpInitialLoad.value = fav.initialLoad;
-
-    D.clearStops();
-    validStops.forEach(function (s) { D.addStop(s.locationId, s.type, s.pallets); });
-    renderStops();
-    updateCapacity();
-
-    closeModal('modalFavorites');
-    planRoute();
-  }
-
-  // enhanceSelect() ile özelleştirilmiş bir <select>'e programatik değer
-  // atarken (option listesi değişmediği için MutationObserver tetiklenmez)
-  // tetikleyici butonun görünen metnini de elle senkronlamak gerekir.
-  function setSelectValue(select, value) {
-    select.value = value;
-    if (select._tssSync) select._tssSync();
-  }
-
   function renderTrafficSettings() {
     var t = D.getTrafficSettings();
     $('trafficEnabled').checked = !!t.enabled;
@@ -1600,10 +1603,6 @@
     $('btnManageVehicles').addEventListener('click', function () {
       renderVehicleTable();
       openModal('modalVehicles');
-    });
-    $('btnFavoriteRoutes').addEventListener('click', function () {
-      renderFavoritesTable();
-      openModal('modalFavorites');
     });
     $('btnTripHistory').addEventListener('click', function () {
       renderHistoryTable();
@@ -1743,41 +1742,6 @@
       toast('Rota onaylandı ve sefer geçmişine kaydedildi.', 'success');
     });
 
-    // Rotayı Favorilere Ekle: Onayla'dan bağımsız bir eylem — hesaplanmış
-    // sonucu değil, formun GİRDİLERİNİ (başlangıç, saat, duraklar) kaydeder.
-    // Önce isim sorulur (modalSaveFavorite), ardından kaydedilir.
-    el.btnFavoriteRoute.addEventListener('click', function () {
-      if (!D.state.plan) return;
-      $('inpFavoriteName').value = '';
-      openModal('modalSaveFavorite');
-    });
-
-    $('btnConfirmSaveFavorite').addEventListener('click', function () {
-      var name = $('inpFavoriteName').value.trim();
-      if (!name) { toast('Rota adı girin.', 'error'); return; }
-
-      var startLocation = D.getLocation(el.selStart.value);
-      if (!startLocation || !D.state.stops.length) {
-        toast('Kaydedilecek bir rota yok.', 'error');
-        closeModal('modalSaveFavorite');
-        return;
-      }
-      D.addFavorite({
-        name: name,
-        startLocationId: startLocation.id,
-        startLocationName: startLocation.name,
-        departure: el.inpDeparture.value || '08:00',
-        serviceMinutes: Number(el.inpService.value) || 0,
-        initialLoad: initialLoad(),
-        stops: D.state.stops.map(function (s) {
-          var loc = D.getLocation(s.locationId);
-          return { locationId: s.locationId, locationName: loc ? loc.name : '', type: s.type, pallets: s.pallets };
-        })
-      });
-      closeModal('modalSaveFavorite');
-      toast('Rota favorilere eklendi.', 'success');
-    });
-
     el.btnGoogleMaps.addEventListener('click', function () {
       var plan = D.state.plan;
       if (!plan || !plan.groups.length) return;
@@ -1833,7 +1797,6 @@
       btnPlan: $('btnPlan'),
       btnClear: $('btnClear'),
       btnApproveRoute: $('btnApproveRoute'),
-      btnFavoriteRoute: $('btnFavoriteRoute'),
       btnGoogleMaps: $('btnGoogleMaps'),
       btnExportExcel: $('btnExportExcel'),
       btnExportPdf: $('btnExportPdf'),

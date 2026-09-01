@@ -152,7 +152,7 @@ vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 
 | Dosya | Export | Sorumluluk |
 |---|---|---|
-| `data.js` | `TSSData` | Tek gerçek veri kaynağı: lokasyon/araç/durak state'i, localStorage save/load, sefer geçmişi, favoriler, trafik ayarları, TomTom API key, Excel içe aktarma normalizasyonu |
+| `data.js` | `TSSData` | Tek gerçek veri kaynağı: lokasyon/araç/durak state'i, localStorage save/load, sefer geçmişi, trafik ayarları, TomTom API key, Excel içe aktarma normalizasyonu |
 | `osrm.js` | `TSSOsrm` | `matrix(points)` → mesafe/süre matrisi, `route(points)` → çizim geometrisi |
 | `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination, apiKey)` → canlı trafik dahil tekil bacak süresi/mesafesi/güzergahı (bkz. §10.3) |
 | `weather.js` | `TSSWeather` | `checkPoints(points)` → uyarı listesi, `describePoint(...)` → tekil özet |
@@ -175,8 +175,6 @@ state = {
   plan:      null | { startLocation, isWeekend, groups:[...], warning, note },
   history:   [ { id, approvedAt, note, vehicles, vehicleSummary, start,
                  departure, distance, duration, stopCount, groups } ],
-  favorites: [ { id, createdAt, name, startLocationId, startLocationName,
-                 departure, serviceMinutes, initialLoad, stops:[...] } ],
   traffic:   { enabled, applyRushHourOnWeekends,
                morning:{start,end,factor}, evening:{...}, night:{...} },
   tomtomApiKey: ''  // "En Az Süre" modunda canlı trafik için, bkz. §10.3
@@ -200,9 +198,6 @@ Alan detayları:
   eklenmiş alan; bir aracın hangi geçmiş seferde kullanıldığını **kimlik**
   üzerinden (plaka değişse bile) izlemeyi sağlar. Bu alan sonradan eklendi —
   eski kayıtlarda olmayabilir, `fleet.js` bu durumda plaka eşleşmesine düşer.
-- **`favorites`** bir **sonuç** değil, planlama formunun **girdilerini**
-  saklar — yeniden yüklendiğinde rota (araç ataması dahil) o anki güncel
-  veriyle tazeden hesaplanır.
 - **`tomtomApiKey`** — kullanıcının Trafik Ayarları modalından girdiği TomTom
   Developer Portal anahtarı; `setTomTomApiKey()` ile trim'lenerek saklanır.
   Diğer alanlarla aynı `localStorage` anahtarına yazılır (bkz. §5.2), koda
@@ -218,9 +213,8 @@ Alan detayları:
 
 - Tek `localStorage` anahtarı: `tss-rota-panel-v1`.
 - `save()` şu alt kümeyi JSON'a çevirip yazar: `locations, vehicles, history,
-  favorites, traffic, tomtomApiKey` (`stops` ve `plan` KALICI DEĞİL — sayfa
-  yenilenince sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı
-  olmamalı).
+  traffic, tomtomApiKey` (`stops` ve `plan` KALICI DEĞİL — sayfa yenilenince
+  sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı olmamalı).
 - `load()` her alanı ayrı ayrı, eksikse `DEFAULT_*` sabitlerine düşerek okur —
   kısmen bozuk/eksik bir kayıt bile uygulamayı kilitlemez.
 - `localStorage` erişimi başarısız olursa (`try/catch`) sessizce yutulur —

@@ -112,8 +112,8 @@ almaya karar verirse, önce şunları çözmesi gerekiyor:
   - Veri tek tarayıcıya/cihaza bağlı kalır — ekip içinde paylaşılmaz, farklı
     bilgisayardan girildiğinde lokasyon/araç/geçmiş görünmez.
   - Kullanıcı tarayıcı verisini temizlerse (ya da farklı bir profil/gizli sekme
-    kullanırsa) tüm lokasyonlar, araçlar, sefer geçmişi ve favoriler geri
-    dönüşü olmayan şekilde silinir. Yedekleme mekanizması yok.
+    kullanırsa) tüm lokasyonlar, araçlar ve sefer geçmişi geri dönüşü olmayan
+    şekilde silinir. Yedekleme mekanizması yok.
   - Çözüm: canlıya alınacaksa bu katmanın gerçek bir backend + veritabanına
     taşınması gerekir; `js/data.js`'teki `TSSData` arayüzü (aynı fonksiyon
     imzaları) korunursa üstteki kod (`app.js`, `fleet.js` vb.) değişmeden kalabilir.

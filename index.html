@@ -23,7 +23,6 @@
   <div class="header-actions">
     <button class="btn btn-ghost-light" id="btnManageLocations">Lokasyonlar</button>
     <button class="btn btn-ghost-light" id="btnManageVehicles">Araçlar</button>
-    <button class="btn btn-ghost-light" id="btnFavoriteRoutes">Favori Rotalar</button>
     <button class="btn btn-ghost-light" id="btnTripHistory">Sefer Geçmişi</button>
     <button class="btn btn-ghost-light" id="btnTrafficSettings">Trafik Ayarları</button>
   </div>
@@ -160,7 +159,6 @@
 
     <div class="panel-footer">
       <div class="btn-row">
-        <button class="btn btn-forest" id="btnFavoriteRoute" disabled>Rotayı Favorilere Ekle</button>
         <button class="btn btn-primary" id="btnApproveRoute" disabled>Rotayı Onayla</button>
       </div>
     </div>
@@ -394,51 +392,6 @@
         <p class="hint">Bu not PDF çıktısına eklenir ve sefer geçmişinde saklanır.</p>
       </div>
       <button class="btn btn-primary btn-block" id="btnConfirmApprove">Onayla</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ ROTAYI FAVORİLERE EKLE: İSİM VER ============ -->
-<div class="modal-backdrop" id="modalSaveFavorite" hidden>
-  <div class="modal">
-    <div class="modal-header">
-      <h3 class="modal-title">Rotayı Favorilere Ekle</h3>
-      <button class="btn btn-neutral btn-sm" data-close-modal="modalSaveFavorite">Kapat</button>
-    </div>
-    <div class="modal-body">
-      <div class="field-group">
-        <label class="label" for="inpFavoriteName">Rota Adı</label>
-        <input type="text" id="inpFavoriteName" class="input" placeholder="Örn. Sabah AHL Turu" maxlength="60" />
-      </div>
-      <button class="btn btn-primary btn-block" id="btnConfirmSaveFavorite">Onayla</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ FAVORİ ROTALAR ============ -->
-<div class="modal-backdrop" id="modalFavorites" hidden>
-  <div class="modal">
-    <div class="modal-header">
-      <h3 class="modal-title">Favori Rotalar</h3>
-      <button class="btn btn-neutral btn-sm" data-close-modal="modalFavorites">Kapat</button>
-    </div>
-    <div class="modal-body">
-      <table class="data-table favorite-table">
-        <colgroup>
-          <col style="width:52%">
-          <col style="width:24%">
-          <col style="width:24%">
-        </colgroup>
-        <thead>
-          <tr>
-            <th>Ad</th>
-            <th>Kaydedilme</th>
-            <th class="center">İşlem</th>
-          </tr>
-        </thead>
-        <tbody id="favoriteTableBody"></tbody>
-      </table>
-      <p class="empty-note" id="favoriteEmpty" hidden>Henüz favori rota yok.</p>
     </div>
   </div>
 </div>
