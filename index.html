@@ -142,6 +142,7 @@
         <h2 class="panel-title">Rota Tablosu</h2>
       </div>
       <div class="export-actions">
+        <button class="btn btn-neutral btn-sm btn-compare" id="btnCompare" disabled>Karşılaştır</button>
         <button class="btn btn-neutral btn-sm" id="btnGoogleMaps" disabled>Google Maps</button>
         <button class="btn btn-neutral btn-excel btn-sm" id="btnExportExcel" disabled>Excel</button>
         <button class="btn btn-neutral btn-sm" id="btnExportPdf" disabled>PDF</button>
@@ -373,6 +374,22 @@
         <p class="hint">
         </p>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ROTA KARŞILAŞTIRMASI ============ -->
+<div class="modal-backdrop" id="modalCompare" hidden>
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div>
+        <h3 class="modal-title">Rota Karşılaştırması</h3>
+        <p class="compare-sub">Aynı duraklar, iki farklı optimizasyon sonucu</p>
+      </div>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalCompare">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div id="compareBody"></div>
     </div>
   </div>
 </div>

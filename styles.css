@@ -348,6 +348,11 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 /* Excel butonları: Kapat butonuyla aynı desen — normalde düz nötr,
    üstüne gelince çerçeve/metin forest yeşiline döner. */
 .btn-excel:not(:disabled):hover{ border-color: var(--brand-forest); color: var(--brand-forest); filter: none; }
+/* Karşılaştır: diğer export-actions butonlarından (Google Maps/Excel/PDF)
+   farklı bir eylem türü — aktif planı hiç değiştirmiyor, sadece bilgi
+   veriyor. Kırmızı çerçeve/metinle sürekli ayırt edilir (sadece hover değil). */
+.btn-compare{ color: var(--brand-red); border-color: var(--brand-red); }
+.btn-compare:not(:disabled):hover{ background: oklch(0.55 0.22 27 / 0.06); filter: none; }
 .btn-ghost-light{ background: transparent; color: var(--n-0); border-color: rgba(255,255,255,0.45); }
 .btn-ghost-light:not(:disabled):hover{ background: rgba(255,255,255,0.12); filter: none; }
 /* Kırmızı header üzerinde kırmızı focus ring görünmez olur — bu butonlar
@@ -542,10 +547,15 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
+/* İkon SADECE etiketin yanında (13px) — değer satırı tam kart genişliğini
+   kullanmaya devam ediyor, aksi halde "3 sa 22 dk" gibi daha uzun değerler
+   ikonun çaldığı genişlükle iki satıra bölünüyordu. */
+.summary-head{ display: flex; align-items: center; gap: 5px; }
+.summary-head svg{ display: block; width: 13px; height: 13px; color: var(--n-500); flex: 0 0 auto; }
 .summary-label{ font-size: 10px; font-weight: 600; color: var(--n-500); text-transform: uppercase; letter-spacing: 0.03em; }
-.summary-value{ font-size: 15px; font-weight: 700; color: var(--n-900); }
+.summary-value{ font-size: 15px; font-weight: 700; color: var(--n-900); white-space: nowrap; }
 
 /* =========================================================
    Tables
@@ -628,6 +638,31 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 }
 .modal-title{ font-size: 16px; }
 .modal-body{ padding: 20px; overflow-y: scroll; display: flex; flex-direction: column; gap: 16px; }
+/* Karşılaştırma modalı iki sütunu yan yana rahat sığdırmak için standart
+   880px modal genişliğinden biraz daha geniş. */
+.modal-wide{ width: min(960px, 100%); }
+
+/* =========================================================
+   Rota karşılaştırması ("Karşılaştır" butonu)
+   ========================================================= */
+.compare-sub{ margin: 4px 0 0; font-size: 12px; color: var(--n-500); }
+.compare-cols{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.compare-card{ border: 1px solid var(--n-200); border-radius: var(--r-card); overflow: hidden; }
+.compare-head{ padding: 14px 16px; background: var(--n-50); border-bottom: 1px solid var(--n-200); }
+.compare-head-row{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.compare-name{ font-size: 13px; font-weight: 700; color: var(--n-900); }
+.compare-kpis{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 16px; }
+.compare-kpi{ display: flex; flex-direction: column; gap: 4px; }
+.compare-kpi-head{ display: flex; align-items: center; gap: 5px; }
+.compare-kpi-head svg{ display: block; width: 13px; height: 13px; color: var(--n-500); flex: 0 0 auto; }
+.compare-kpi-label{ font-size: 10px; font-weight: 600; color: var(--n-500); text-transform: uppercase; letter-spacing: 0.03em; }
+.compare-kpi-value{ font-size: 15px; font-weight: 700; color: var(--n-900); align-self: flex-start; }
+/* Kazanan değer: badge-ok ile aynı görsel dil (mint zemin + forest yeşili
+   metin) — sadece renkli metinden daha net bir "kazanan" rozeti. */
+.compare-kpi-value.is-best{ color: var(--brand-forest); background: var(--brand-mint); padding: 2px 8px; border-radius: var(--r-input); }
+.compare-table-wrap{ padding: 0 16px 12px; }
+.compare-vehicle-model{ display: block; font-size: 11px; color: var(--n-500); font-weight: 400; margin-top: 1px; }
+.compare-foot{ padding: 14px 16px; border-top: 1px solid var(--n-200); }
 
 .form-card{
   background: var(--n-50);

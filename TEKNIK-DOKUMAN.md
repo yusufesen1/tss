@@ -269,6 +269,48 @@ alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:379-387`).
 6. **Dışa aktarma**: Excel (araç başına sayfa) veya PDF (harita görüntüsü +
    araç başına KPI/tablo bölümü).
 
+Ayrıca, plan oluştuktan sonra **"Karşılaştır"** butonu (Rota Tablosu
+başlığında, export butonlarının yanında) isteğe bağlı olarak aktif
+metrikle (mesafe/süre) **diğer** metriği yan yana karşılaştırır — bkz.
+§6.1.
+
+### 6.1 Rota Karşılaştırması ("Karşılaştır" butonu)
+
+`app.js` → `openCompareModal()` / `renderCompareModal()`. Otomatik değil,
+sadece kullanıcı butona bastığında hesaplanır:
+
+- `planRoute()` başarılı olduğunda `lastPlanningContext` (`startLocation,
+  stops, matrix, isWeekend, activeCostMetric`) modül değişkeninde saklanır.
+- "Karşılaştır"a basılınca `computeMetricAssignment(otherMetric)` bu
+  **aynı OSRM matrisini tekrar kullanarak** (yeni bir OSRM isteği
+  atmadan) `Fleet.assignFleet(...)`'i diğer `costMetric` ile çağırır —
+  aktif planın kendisi zaten `D.state.plan`'da hazır, sadece diğeri
+  hesaplanır. Güzergah geometrisi bu adımda hiç istenmez (sadece özet
+  sayılar gösterilir).
+- **TomTom canlı trafik**: diğer metrik `'duration'` ise ve bir TomTom
+  API key kayıtlıysa, `openCompareModal()` `planRoute()` ile **birebir
+  aynı kuralla** (§10.3) o tarafın gruplarını da `refineGroupWithLiveTraffic(...)`
+  ile canlı trafikle iyileştirir — aksi halde bu sütun sadece OSRM'in
+  statik tahminini gösterip yanıltıcı olurdu (bazı senaryolarda mesafe
+  moduyla neredeyse aynı çıkabilir). İstek sürerken genel `#loading`
+  göstergesi kullanılır; başarısız olursa (key geçersiz, kota, ağ) diğer
+  TomTom kullanımlarıyla aynı best-effort davranış: toast ile bildirilip
+  OSRM tahminine sessizce düşülür, modal yine de açılır.
+- Modal iki sütun gösterir: Toplam Mesafe (tüm grupların `result.distance`
+  toplamı), En Geç Bitiş (grupların `result.finishSec` maksimumu — araçlar
+  paralel çalıştığı için "işin bittiği an" budur), Araç Sayısı, ve araç
+  başına mini bir tablo (durak/mesafe/süre). Hangi metriğin hangi
+  KPI'da daha iyi olduğu (`Daha kısa` / `Daha erken biter`) yeşil
+  etiketle işaretlenir.
+- **"Bu sonucu kullan"**: diğer metriği aktif plana geçirmek için
+  `computeMetricAssignment`'ın sonucunu yeniden kullanmaz — sadece
+  `selCostMetric` dropdown'ını (`setSelectValue`, özel `<select>`'in
+  görünen metnini de senkronlar) o metriğe çevirip **`planRoute()`'u
+  yeniden çalıştırır**. Bu, geometri çekme ve gerekiyorsa TomTom
+  iyileştirmesi dahil tam, test edilmiş akışı tekrar kullanmak için
+  bilinçli bir tercih — karşılaştırma modalı için ayrı/kısmi bir
+  "uygula" yolu yazılmadı.
+
 Paralel olarak, plan her yenilendiğinde `checkWeather(plan)` her durak için
 Open-Meteo'dan tahmin çeker ve olumsuz koşulları (yağmur/kar/fırtına/sis)
 üst bantta uyarı olarak gösterir — **rotayı hiç değiştirmez**, sadece

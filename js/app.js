@@ -17,6 +17,11 @@
   var editingVehicleId = null;
   var editingLocationId = null;
   var draggedRowInfo = null; // { group, index } — sürükle-bırakta hangi araç grubunun hangi satırı taşınıyor
+  // Son başarılı planRoute() çağrısının OSRM matrisi + girdileri — "Karşılaştır"
+  // butonu diğer optimizasyon metriğini bu matrisi tekrar kullanarak (yeni bir
+  // OSRM isteği atmadan) hesaplayabilsin diye. planRoute() başarıyla matrix
+  // aldığında set edilir, clearPlan()'da temizlenir.
+  var lastPlanningContext = null;
 
   var el = {};
 
@@ -130,6 +135,19 @@
   // Birden fazla araç kullanıldığında her aracın güzergahı/duraklarını
   // ayırt etmek için döngüsel bir renk paleti.
   var GROUP_COLORS = ['#C90C0F', '#0F6FC9', '#1E8F5F', '#B8860B', '#7B3FA0', '#C9600F'];
+
+  // Özet/karşılaştırma kartlarındaki küçük etiket ikonları — sabit, tek
+  // renkli (currentColor) stroke SVG'ler; tasarım sistemindeki "ikon
+  // sadece anlamayı desteklesin, dominant olmasın" kuralına uygun olarak
+  // sadece etiketin yanında, 13px. Statik/sabit içerik olduğundan innerHTML
+  // ile basılıyor (kullanıcı verisi değil, escapeHtml gerekmiyor).
+  var ICONS = {
+    distance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="5.5" r="2.5"/><path d="M8 18.5h6a4 4 0 0 0 4-4v-1a4 4 0 0 0-4-4H10a4 4 0 0 1-4-4v-1"/></svg>',
+    duration: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>',
+    road: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 6.5 21"/><path d="M15 3l2.5 18"/><path d="M12 4v3M12 10v3M12 16v3"/></svg>',
+    flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V3"/><path d="M6 4h12l-3 3.5L18 11H6"/></svg>',
+    truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h10v9H3z"/><path d="M13 11h4l3 3v2h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17" cy="18.5" r="1.6"/></svg>'
+  };
   function groupColor(index) { return GROUP_COLORS[index % GROUP_COLORS.length]; }
 
   function markerIcon(label, variant, offset, color) {
@@ -476,6 +494,11 @@
     rebuildOptions();
 
     select._tssWrap = wrap;
+    // Kod (ör. karşılaştırma görünümünden "Bu sonucu kullan") select.value'yu
+    // doğrudan atadığında (bir option ekleme/çıkarma olmadan) MutationObserver
+    // tetiklenmez — bu durumlarda tetikleyicinin görünen metnini elle
+    // senkronlamak için (bkz. setSelectValue).
+    select._tssSync = syncFromSelect;
     return wrap;
   }
 
@@ -618,6 +641,16 @@
         logDistanceMatrix(points, m.distances);
         setLoading(true, 'Araç ataması ve en uygun sıralama hesaplanıyor…');
 
+        // "Karşılaştır" bu matrisi tekrar kullanıp diğer metriği (mesafe/süre)
+        // yeniden OSRM'e sormadan hesaplayabilsin diye sakla.
+        lastPlanningContext = {
+          startLocation: startLocation,
+          stops: stops,
+          matrix: m,
+          isWeekend: isWeekend,
+          activeCostMetric: costMetric
+        };
+
         var assignment = Fleet.assignFleet({
           startLocation: startLocation,
           stops: stops,
@@ -681,6 +714,210 @@
         setLoading(false);
         toast(err.message || 'Rota hesaplanamadı. İnternet bağlantısını kontrol edin.', 'error');
       });
+  }
+
+  /* ---------------------------------------------------------
+     Rota Karşılaştırması ("Karşılaştır" butonu)
+     ---------------------------------------------------------
+     Aktif plan zaten hesaplanmışken, DİĞER optimizasyon metriğini
+     lastPlanningContext'teki (planRoute() sırasında saklanan) OSRM
+     matrisini tekrar kullanarak — yeni bir OSRM isteği atmadan — hesaplar.
+     Güzergah geometrisi burada hiç istenmez (sadece özet sayılar
+     gösterilir). AMA "En Az Süre" tarafı, planRoute() ile BİREBİR AYNI
+     kuralla (bkz. §7.1/§10.3): bir TomTom API key kayıtlıysa, o tarafın
+     bacak süreleri de canlı trafikle iyileştirilir — aksi halde bu sütun
+     sadece OSRM'in statik tahminini gösterirdi, ki bu hem yanıltıcı hem
+     de bazı senaryolarda mesafe moduyla görünürde aynı/çok yakın çıkıp
+     karşılaştırmayı anlamsızlaştırabilir. */
+
+  function metricLabel(metric) {
+    return metric === 'duration' ? 'En Az Süre (dk)' : 'En Kısa Mesafe (km)';
+  }
+
+  function otherCostMetric(metric) {
+    return metric === 'duration' ? 'distance' : 'duration';
+  }
+
+  function computeMetricAssignment(metric) {
+    var ctx = lastPlanningContext;
+    return Fleet.assignFleet({
+      startLocation: ctx.startLocation,
+      stops: ctx.stops,
+      vehicles: D.state.vehicles,
+      matrix: ctx.matrix,
+      serviceMinutes: Number(el.inpService.value) || 0,
+      departureTime: el.inpDeparture.value || '08:00',
+      initialLoad: initialLoad(),
+      traffic: D.getTrafficSettings(),
+      isWeekend: ctx.isWeekend,
+      history: D.getHistory(),
+      costMetric: metric
+    });
+  }
+
+  // groups: buildGroup() çıktısı dizisi (D.state.plan.groups ya da
+  // Fleet.assignFleet(...).groups — ikisi de {vehicle, stops, result} şeklinde).
+  function summarizeGroups(groups) {
+    var totalDistance = 0, maxFinish = 0;
+    var rows = groups.map(function (g) {
+      totalDistance += g.result.distance;
+      if (g.result.finishSec > maxFinish) maxFinish = g.result.finishSec;
+      return { vehicle: g.vehicle, stopCount: g.stops.length, distance: g.result.distance, duration: g.result.totalSeconds };
+    });
+    return { rows: rows, totalDistance: totalDistance, maxFinish: maxFinish, vehicleCount: groups.length };
+  }
+
+  function buildCompareKpi(label, value, isBest, iconKey) {
+    var wrap = document.createElement('div');
+    wrap.className = 'compare-kpi';
+    var head = document.createElement('span');
+    head.className = 'compare-kpi-head';
+    head.innerHTML = ICONS[iconKey] || '';
+    var lab = document.createElement('span');
+    lab.className = 'compare-kpi-label';
+    lab.textContent = label;
+    head.appendChild(lab);
+    var val = document.createElement('span');
+    val.className = 'compare-kpi-value' + (isBest ? ' is-best' : '');
+    val.textContent = value;
+    wrap.appendChild(head);
+    wrap.appendChild(val);
+    return wrap;
+  }
+
+  function buildCompareCard(label, isActive) {
+    var card = document.createElement('div');
+    card.className = 'compare-card';
+
+    var head = document.createElement('div');
+    head.className = 'compare-head';
+    var headRow = document.createElement('div');
+    headRow.className = 'compare-head-row';
+    var name = document.createElement('span');
+    name.className = 'compare-name';
+    name.textContent = label;
+    headRow.appendChild(name);
+    if (isActive) {
+      var badge = document.createElement('span');
+      badge.className = 'badge badge-ok';
+      badge.textContent = 'Aktif plan';
+      headRow.appendChild(badge);
+    }
+    head.appendChild(headRow);
+    card.appendChild(head);
+    return card;
+  }
+
+  // "Karşılaştır" tıklamasını yönetir: diğer metriği hesaplar, "En Az Süre"
+  // ise ve bir TomTom key kayıtlıysa planRoute() ile aynı şekilde canlı
+  // trafikle iyileştirir, sonra modalı açar. TomTom isteği ağ gecikmesi
+  // içerdiğinden genel yükleme göstergesi (#loading) kullanılır.
+  function openCompareModal() {
+    if (!lastPlanningContext || !D.state.plan) return;
+    var activeMetric = lastPlanningContext.activeCostMetric;
+    var otherMetric = otherCostMetric(activeMetric);
+    var otherAssignment = computeMetricAssignment(otherMetric);
+
+    var apiKey = D.getTomTomApiKey();
+    var needsTomTom = otherMetric === 'duration' && !!apiKey && !!TomTom;
+
+    if (!needsTomTom) {
+      renderCompareModal(activeMetric, otherMetric, otherAssignment);
+      openModal('modalCompare');
+      return;
+    }
+
+    setLoading(true, 'Karşılaştırma için canlı trafik verisi alınıyor (TomTom)…');
+    var pseudoPlan = { startLocation: lastPlanningContext.startLocation };
+    Promise.all(otherAssignment.groups.map(function (g) {
+      return refineGroupWithLiveTraffic(pseudoPlan, g, apiKey);
+    })).then(function (outcomes) {
+      setLoading(false);
+      if (outcomes.some(function (ok) { return !ok; })) {
+        toast('TomTom canlı trafik verisine ulaşılamadı (kota/bağlantı) — karşılaştırma OSRM tahminiyle gösteriliyor.', 'error');
+      }
+      renderCompareModal(activeMetric, otherMetric, otherAssignment);
+      openModal('modalCompare');
+    });
+  }
+
+  // İki metriği (aktif olan + diğeri) karşılaştırma modalına render eder.
+  // otherAssignment: openCompareModal() tarafından zaten hesaplanmış
+  // (gerekiyorsa TomTom ile iyileştirilmiş) Fleet.assignFleet(...) sonucu.
+  function renderCompareModal(activeMetric, otherMetric, otherAssignment) {
+    var activeSummary = summarizeGroups(D.state.plan.groups);
+    var otherSummary = summarizeGroups(otherAssignment.groups);
+
+    var entries = [
+      { key: activeMetric, summary: activeSummary, isActive: true },
+      { key: otherMetric, summary: otherSummary, isActive: false }
+    ];
+    var shorterIdx = entries[0].summary.totalDistance <= entries[1].summary.totalDistance ? 0 : 1;
+    var earlierIdx = entries[0].summary.maxFinish <= entries[1].summary.maxFinish ? 0 : 1;
+
+    var cols = document.createElement('div');
+    cols.className = 'compare-cols';
+
+    entries.forEach(function (entry, idx) {
+      var card = buildCompareCard(metricLabel(entry.key), entry.isActive);
+
+      var kpis = document.createElement('div');
+      kpis.className = 'compare-kpis';
+      kpis.appendChild(buildCompareKpi('Toplam Mesafe', km(entry.summary.totalDistance) + ' km',
+        idx === shorterIdx, 'distance'));
+      kpis.appendChild(buildCompareKpi('En Geç Bitiş', Opt.secondsToTime(entry.summary.maxFinish),
+        idx === earlierIdx, 'flag'));
+      kpis.appendChild(buildCompareKpi('Araç Sayısı', String(entry.summary.vehicleCount), false, 'truck'));
+      card.appendChild(kpis);
+
+      var tableWrap = document.createElement('div');
+      tableWrap.className = 'compare-table-wrap';
+      var table = document.createElement('table');
+      table.className = 'data-table';
+      var thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th>Araç</th><th class="num">Durak</th><th class="num">Mesafe</th><th class="num">Süre</th></tr>';
+      table.appendChild(thead);
+      var tbody = document.createElement('tbody');
+      entry.summary.rows.forEach(function (r) {
+        var tr = document.createElement('tr');
+        var tdVeh = document.createElement('td');
+        tdVeh.className = 'cell-name';
+        tdVeh.innerHTML = escapeHtml(r.vehicle.plate) +
+          '<span class="compare-vehicle-model">' + escapeHtml(r.vehicle.model || '') + '</span>';
+        tr.appendChild(tdVeh);
+        appendTextCell(tr, r.stopCount, 'num');
+        appendTextCell(tr, km(r.distance) + ' km', 'num');
+        appendTextCell(tr, durationLabel(r.duration), 'num');
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+      card.appendChild(tableWrap);
+
+      var foot = document.createElement('div');
+      foot.className = 'compare-foot';
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-neutral btn-block';
+      if (entry.isActive) {
+        btn.textContent = 'Zaten aktif plan';
+        btn.disabled = true;
+      } else {
+        btn.textContent = 'Bu sonucu kullan';
+        btn.addEventListener('click', function () {
+          closeModal('modalCompare');
+          setSelectValue(el.selCostMetric, entry.key);
+          planRoute();
+        });
+      }
+      foot.appendChild(btn);
+      card.appendChild(foot);
+
+      cols.appendChild(card);
+    });
+
+    var body = $('compareBody');
+    body.innerHTML = '';
+    body.appendChild(cols);
   }
 
   // Bir grubun harita için gerçek güzergah geometrisini (yol ağını takip eden
@@ -908,21 +1145,26 @@
     });
 
     el.btnApproveRoute.disabled = !hasGroups;
+    el.btnCompare.disabled = !hasGroups;
     el.btnGoogleMaps.disabled = !hasGroups;
     el.btnExportExcel.disabled = !hasGroups;
     el.btnExportPdf.disabled = !hasGroups;
   }
 
-  function buildSummaryCard(label, value) {
+  function buildSummaryCard(label, value, iconKey) {
     var card = document.createElement('div');
     card.className = 'summary-card';
+    var head = document.createElement('span');
+    head.className = 'summary-head';
+    head.innerHTML = ICONS[iconKey] || '';
     var lab = document.createElement('span');
     lab.className = 'summary-label';
     lab.textContent = label;
+    head.appendChild(lab);
     var val = document.createElement('strong');
     val.className = 'summary-value';
     val.textContent = value;
-    card.appendChild(lab);
+    card.appendChild(head);
     card.appendChild(val);
     return card;
   }
@@ -982,10 +1224,10 @@
 
     var summary = document.createElement('div');
     summary.className = 'summary';
-    summary.appendChild(buildSummaryCard('Toplam Mesafe', group.meta.distance));
-    summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration));
-    summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration));
-    summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish));
+    summary.appendChild(buildSummaryCard('Toplam Mesafe', group.meta.distance, 'distance'));
+    summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration, 'duration'));
+    summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration, 'road'));
+    summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish, 'flag'));
     wrap.appendChild(summary);
 
     var tableWrap = document.createElement('div');
@@ -1214,6 +1456,7 @@
   function clearPlan() {
     D.clearStops();
     D.state.plan = null;
+    lastPlanningContext = null;
     renderStops();
     updateCapacity();
     el.planGroups.innerHTML = '';
@@ -1221,6 +1464,7 @@
     $('weatherWarnings').hidden = true;
     el.fleetWarning.hidden = true;
     el.btnApproveRoute.disabled = true;
+    el.btnCompare.disabled = true;
     el.btnGoogleMaps.disabled = true;
     el.btnExportExcel.disabled = true;
     el.btnExportPdf.disabled = true;
@@ -1524,6 +1768,14 @@
     });
   }
 
+  // enhanceSelect() ile özelleştirilmiş bir <select>'e programatik değer
+  // atarken (option listesi değişmediği için MutationObserver tetiklenmez)
+  // tetikleyici butonun görünen metnini de elle senkronlamak gerekir.
+  function setSelectValue(select, value) {
+    select.value = value;
+    if (select._tssSync) select._tssSync();
+  }
+
   function renderTrafficSettings() {
     var t = D.getTrafficSettings();
     $('trafficEnabled').checked = !!t.enabled;
@@ -1608,6 +1860,7 @@
       renderHistoryTable();
       openModal('modalHistory');
     });
+    el.btnCompare.addEventListener('click', openCompareModal);
     $('btnExportHistoryExcel').addEventListener('click', function () {
       try {
         Exp.toExcelHistory(D.getHistory());
@@ -1797,6 +2050,7 @@
       btnPlan: $('btnPlan'),
       btnClear: $('btnClear'),
       btnApproveRoute: $('btnApproveRoute'),
+      btnCompare: $('btnCompare'),
       btnGoogleMaps: $('btnGoogleMaps'),
       btnExportExcel: $('btnExportExcel'),
       btnExportPdf: $('btnExportPdf'),
