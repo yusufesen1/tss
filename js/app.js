@@ -956,6 +956,12 @@
     }
 
     return Promise.all(legPromises).then(function (legs) {
+      // legs'i grupta saklıyoruz: aksi halde palet/servis süresi düzenlemesi
+      // veya araç değişimi gibi sırayı DEĞİŞTİRMEYEN bir düzenleme sonrası
+      // replayGroupOnly() bu canlı veriyi bilmeden düz replayGroup()'a
+      // düşüyor ve TomTom'un canlı trafiği sessizce OSRM'in statik
+      // tahminiyle eziliyordu (bkz. replayGroupResult).
+      group.liveLegs = legs;
       group.result = Fleet.replayGroupWithLiveLegs(group, legs, {
         departureTime: el.inpDeparture.value || '08:00',
         capacity: group.vehicle.usable,
@@ -1069,6 +1075,17 @@
   // Bir grubun sırasını DEĞİŞTİRMEDEN zaman çizelgesini yeniden oynatır
   // (js/fleet.js → replayGroup, optimizer'ın sıralama mantığına dokunmaz).
   function replayGroupResult(plan, group) {
+    // group.liveLegs varsa (TomTom ile zenginleştirilmiş bir grup), bunu
+    // ATMADAN yeniden oynatıyoruz — sıra değişmediği sürece bacak
+    // mesafe/süreleri hâlâ geçerli, tekrar OSRM'in statik tahminine
+    // düşmemize gerek yok (bkz. refineGroupWithLiveTraffic, reorderGroupRows).
+    if (group.liveLegs) {
+      return Fleet.replayGroupWithLiveLegs(group, group.liveLegs, {
+        departureTime: el.inpDeparture.value || '08:00',
+        capacity: group.vehicle.usable,
+        defaultServiceMinutes: Number(el.inpService.value) || 0
+      });
+    }
     return Fleet.replayGroup(group, {
       departureTime: el.inpDeparture.value || '08:00',
       capacity: group.vehicle.usable,
@@ -1415,6 +1432,11 @@
     var moved = order.splice(fromPos, 1)[0];
     order.splice(toPos, 0, moved);
     group.order = order;
+    // Sıra değiştiği için önceki TomTom bacakları artık yanlış durak
+    // çiftlerine karşılık geliyor — geçersiz kılıp OSRM'in yeniden
+    // hesapladığı statik tahminlere düşüyoruz (canlı trafik burada zaten
+    // otomatik olarak yeniden istenmiyor, bkz. refineGroupWithLiveTraffic).
+    group.liveLegs = null;
     group.edited = true;
     replayGroupAndRefreshGeometry(plan, group);
   }

@@ -376,6 +376,42 @@
     return null;
   }
 
+  /* Excel'den gelen saat değerini "HH:MM"e çevirir. sheet_to_json() saat
+     olarak biçimlendirilmiş hücreleri Date değil HAM SAYI (günün kesri,
+     ör. 08:00 -> 0.3333...) olarak döndürür (cellDates açık değil) — önceki
+     kod bunu doğrudan String()'leyip slice(0,5) yapıyordu ("0.333" gibi
+     anlamsız bir sonuç, sessizce yanlış saatle içe aktarılıyordu). "8:00 AM"
+     gibi 12 saatlik metinleri de burada normalize ediyoruz. Tanınamayan
+     değerlerde null döner (çağıran taraf varsayılana düşer). */
+  function parseExcelTime(v) {
+    if (v === null || v === undefined || v === '') return null;
+
+    if (typeof v === 'number' && isFinite(v)) {
+      var frac = v - Math.floor(v);           // gün içi kesir (tam sayı kısmı = tarih seri no'su)
+      var totalMin = Math.round(frac * 24 * 60);
+      totalMin = ((totalMin % 1440) + 1440) % 1440;
+      var h = Math.floor(totalMin / 60), m = totalMin % 60;
+      return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    }
+
+    var s = String(v).trim();
+
+    var ampm = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])$/);
+    if (ampm) {
+      var hh = Number(ampm[1]) % 12;
+      if (/p/i.test(ampm[3])) hh += 12;
+      return (hh < 10 ? '0' : '') + hh + ':' + ampm[2];
+    }
+
+    var plain = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (plain) {
+      var h2 = Number(plain[1]);
+      if (h2 >= 0 && h2 <= 23) return (h2 < 10 ? '0' : '') + h2 + ':' + plain[2];
+    }
+
+    return null;
+  }
+
   function importLocationRows(rows) {
     var added = 0, skipped = 0;
     rows.forEach(function (row) {
@@ -391,8 +427,8 @@
           name: name,
           lat: String(lat).replace(',', '.'),
           lng: String(lng).replace(',', '.'),
-          from: from ? String(from).slice(0, 5) : '00:00',
-          until: until ? String(until).slice(0, 5) : '23:59'
+          from: parseExcelTime(from) || '00:00',
+          until: parseExcelTime(until) || '23:59'
         });
         added++;
       } catch (e) { skipped++; }

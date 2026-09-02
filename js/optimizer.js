@@ -10,7 +10,14 @@
   'use strict';
 
   var PENALTY_CAPACITY = 1e7;   // kapasite ihlali: kesinlikle kaçınılır
-  var PENALTY_TIME     = 5e5;   // erişim saati ihlali: mümkünse kaçınılır
+  // costMetric:'distance' iken baseCost METRE cinsindendir (bkz. simulate).
+  // 5e5 (=500km), 500+ km'lik uzun mesafe rotalarında rakip bir sıralamanın
+  // kat ettiği ekstra mesafeyle eşitlenip aşılabiliyordu — bu durumda
+  // algoritma erişim saati ihlalli ama "kısa" bir rotayı, ihlalsiz ama
+  // biraz daha uzun bir rotaya tercih edebiliyordu. PENALTY_CAPACITY ile
+  // aynı büyüklüğe çekildi ki ülke ölçeğindeki (1000+ km) rotalarda da
+  // kesinlikle kaçınılsın.
+  var PENALTY_TIME     = 1e7;   // erişim saati ihlali: kesinlikle kaçınılır
 
   function timeToSeconds(hhmm) {
     var parts = String(hhmm || '00:00').split(':');
@@ -94,13 +101,32 @@
       // Erişim saati kontrolü
       var openSec = timeToSeconds(node.location.from);
       var closeSec = timeToSeconds(node.location.until);
-      if (arrival < openSec) {
-        arrival = openSec;                       // açılışı bekle
-        issues.push('Açılış bekleniyor');
-      }
-      if (arrival > closeSec) {
-        timeViolations++;
-        issues.push('Erişim saati aşıldı (' + node.location.until + ')');
+      // Gece yarısını saran erişim penceresi (ör. 22:00–06:00): açılış,
+      // kapanıştan büyük. arrival gün sınırını aşarak birikimli ilerlediği
+      // için (ör. 25:00 gibi), önce günün-saatine (tod) indirgeyip
+      // inTrafficBand ile aynı sarma mantığını uyguluyoruz — aksi halde
+      // 03:00 gibi pencere içindeki bir varış hem "açılış bekleniyor" hem
+      // de "erişim saati aşıldı" olarak yanlış işaretleniyordu.
+      if (openSec > closeSec) {
+        var arrivalDay = Math.floor(arrival / 86400);
+        var arrivalTod = arrival - arrivalDay * 86400;
+        var insideWindow = arrivalTod >= openSec || arrivalTod < closeSec;
+        if (!insideWindow) {
+          arrival = arrivalDay * 86400 + openSec;  // bugünkü açılışı bekle
+          issues.push('Açılış bekleniyor');
+        }
+        // Not: pencere gece yarısını sardığı için bekleme sonrası arrival
+        // her zaman pencere içinde olur — ayrı bir "kapanışı aştı" durumu
+        // burada oluşamaz.
+      } else {
+        if (arrival < openSec) {
+          arrival = openSec;                       // açılışı bekle
+          issues.push('Açılış bekleniyor');
+        }
+        if (arrival > closeSec) {
+          timeViolations++;
+          issues.push('Erişim saati aşıldı (' + node.location.until + ')');
+        }
       }
 
       // Yük kontrolü
@@ -186,13 +212,18 @@
     var visited = {};
     var order = [];
     var current = 0;
+    // costMetric 'duration' ise başlangıç çözümü de süre matrisine göre
+    // kurulmalı — aksi halde "En Az Süre" modunda bile ilk sıralama
+    // mesafeye (km) göre belirleniyordu; 2-opt/Or-opt bunu düzeltebilse de
+    // başlangıç noktası yanlış metrikten geliyordu.
+    var matrix = ctx.costMetric === 'duration' ? ctx.durations : ctx.distances;
 
     for (var step = 0; step < n; step++) {
       var best = -1, bestScore = Infinity;
       for (var i = 1; i <= n; i++) {
         if (visited[i]) continue;
         // Yükleme öncelikli: boşaltma için araçta palet olmalı
-        var score = ctx.distances[current][i];
+        var score = matrix[current][i];
         if (best === -1 || score < bestScore) { best = i; bestScore = score; }
       }
       visited[best] = true;

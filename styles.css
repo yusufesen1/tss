@@ -2,27 +2,33 @@
    TSS Design System — tokens
    ========================================================= */
 :root{
-  /* Brand */
+  /* Brand — TSS Design System renk paleti (yalnızca renkler alındı;
+     yazı tipi, radius, gölge ve motion bu projenin kendi değerleri). */
   --brand-red:      #C90C0F;
-  --brand-red-dark: #A80A0C;
-  --brand-coral:    #ea694f;
-  --brand-coral-dk: #D24E34;
-  --brand-mint:     #B1F1A7;
-  --brand-cream:    #F8EFC6;
-  --brand-forest:   #458553;
+  --brand-red-dark: #A90003;
+  /* TSS paletinde ayrı bir "uyarı" rengi yok — olumsuz/ikincil her şey
+     marka kırmızısının kendisi. */
+  --brand-coral:    #C90C0F;
+  --brand-coral-dk: #A90003;
+  --brand-mint:     #E8F3EC;
+  --brand-cream:    #F2F2F2;
+  --brand-forest:   #18733A;
+  /* Açık kırmızı zemin tonları (rozet/satır/seçim vurgusu için) */
+  --tss-kirmizi-10: #FAE7E7;
+  --tss-kirmizi-30: #EFB6B7;
 
-  /* Warm-tinted neutral scale */
-  --n-0:   oklch(0.995 0.004 70);
-  --n-50:  oklch(0.975 0.006 70);
-  --n-100: oklch(0.955 0.008 68);
-  --n-200: oklch(0.910 0.010 62);
-  --n-300: oklch(0.850 0.012 58);
-  --n-400: oklch(0.700 0.014 52);
-  --n-500: oklch(0.570 0.014 48);
-  --n-600: oklch(0.470 0.013 46);
-  --n-700: oklch(0.375 0.012 44);
-  --n-800: oklch(0.265 0.011 44);
-  --n-900: oklch(0.185 0.010 44);
+  /* Warm-tinted neutral scale -> TSS nötr paletine eşlendi */
+  --n-0:   #FFFFFF;
+  --n-50:  #F2F2F2;
+  --n-100: #F2F2F2;
+  --n-200: #D9D9D9;
+  --n-300: #D9D9D9;
+  --n-400: #595959;
+  --n-500: #595959;
+  --n-600: #595959;
+  --n-700: #333333;
+  --n-800: #333333;
+  --n-900: #1A1A1A;
 
   /* Radius */
   --r-input: 6px;
@@ -193,7 +199,7 @@ h2, h3{ margin: 0; font-weight: 700; }
 .input:focus{
   outline: none;
   border-color: var(--brand-red);
-  box-shadow: 0 0 0 3px oklch(0.55 0.22 27 / 0.14);
+  box-shadow: 0 0 0 3px rgba(201,12,15,.14);
 }
 .input:disabled{ background: var(--n-100); color: var(--n-400); }
 select.input{ appearance: none; background-image: none; cursor: pointer; }
@@ -294,9 +300,9 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 .tss-select-option.is-selected{
   color: var(--brand-red);
   font-weight: 600;
-  background: oklch(0.55 0.22 27 / 0.08);
+  background: var(--tss-kirmizi-10);
 }
-.tss-select-option.is-selected.is-active{ background: oklch(0.55 0.22 27 / 0.12); }
+.tss-select-option.is-selected.is-active{ background: var(--tss-kirmizi-30); }
 .tss-select-option[aria-disabled="true"]{ color: var(--n-400); cursor: not-allowed; }
 
 .section-head{ display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
@@ -353,7 +359,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
    farklı bir eylem türü — aktif planı hiç değiştirmiyor, sadece bilgi
    veriyor. Kırmızı çerçeve/metinle sürekli ayırt edilir (sadece hover değil). */
 .btn-compare{ color: var(--brand-red); border-color: var(--brand-red); }
-.btn-compare:not(:disabled):hover{ background: oklch(0.55 0.22 27 / 0.06); filter: none; }
+.btn-compare:not(:disabled):hover{ background: var(--tss-kirmizi-10); filter: none; }
 .btn-ghost-light{ background: transparent; color: var(--n-0); border-color: rgba(255,255,255,0.45); }
 .btn-ghost-light:not(:disabled):hover{ background: rgba(255,255,255,0.12); filter: none; }
 /* Kırmızı header üzerinde kırmızı focus ring görünmez olur — bu butonlar
@@ -442,7 +448,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 .badge-pickup{ background: var(--brand-cream); color: var(--n-800); }
 .badge-delivery{ background: var(--brand-mint); color: var(--brand-forest); }
 .badge-ok{ background: var(--brand-mint); color: var(--brand-forest); }
-.badge-warn{ background: oklch(0.55 0.22 27 / 0.10); color: var(--brand-red); }
+.badge-warn{ background: var(--tss-kirmizi-10); color: var(--brand-red); }
 
 /* =========================================================
    Hava durumu uyarısı — rotayı değiştirmez, sadece bilgilendirir
@@ -451,7 +457,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   flex: 0 0 auto;
   margin: 12px 16px 0;
   padding: 10px 12px;
-  background: oklch(0.55 0.22 27 / 0.06);
+  background: var(--tss-kirmizi-10);
   border: 1px solid var(--brand-coral);
   border-left: 3px solid var(--brand-coral);
   border-radius: var(--r-input);
@@ -475,7 +481,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   font-size: 12px;
   font-weight: 500;
   color: var(--brand-red-dark);
-  background: oklch(0.55 0.20 25 / 0.07);
+  background: var(--tss-kirmizi-10);
   border: 1px solid var(--brand-red);
   border-left: 3px solid var(--brand-red);
   border-radius: var(--r-input);
@@ -587,7 +593,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 .data-table .center{ text-align: center; }
 .data-table .cell-name{ font-weight: 600; color: var(--n-900); }
 .data-table tbody tr.row-start td{ background: var(--brand-cream); }
-.data-table tbody tr.row-warn td{ background: oklch(0.55 0.22 27 / 0.05); }
+.data-table tbody tr.row-warn td{ background: var(--tss-kirmizi-10); }
 .data-table tbody tr.row-draggable{ cursor: grab; }
 .data-table tbody tr.row-draggable.is-dragging{ opacity: 0.5; }
 .data-table tbody tr.is-drop-target td{ background: var(--n-200); }
