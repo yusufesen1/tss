@@ -50,7 +50,44 @@ try {
 }
 
 var db = d.db;
-var stats = { locations: 0, vehicles: 0, trips: 0, settings: 0, skipped: 0 };
+var stats = { locations: 0, vehicles: 0, trips: 0, settings: 0, skipped: 0, migrated: 0 };
+
+/* Çoklu araç desteği eklenmeden önceki sefer kayıtları farklı şekildeydi:
+   `groups` dizisi yoktu, `rows`/`vehiclePlate`/`vehicleModel` doğrudan
+   kaydın kökündeydi. Bunları olduğu gibi aktarırsak `groups: []` olur ve
+   o seferlerin TÜM durak detayı kaybolur. Burada tek gruplu yeni şekle
+   çeviriyoruz (bkz. js/data.js → approveTrip entry şekli). */
+function migrateLegacyTrip(trip) {
+  if (!trip || Array.isArray(trip.groups)) return trip;
+  if (!Array.isArray(trip.rows)) return trip;   // tanınmayan şekil, dokunma
+
+  stats.migrated++;
+  var plate = trip.vehiclePlate || '';
+  var model = trip.vehicleModel || '';
+  var converted = {
+    id: trip.id,
+    approvedAt: trip.approvedAt,
+    note: trip.note || '',
+    vehicles: plate ? [{ plate: plate, model: model }] : [],
+    vehicleSummary: trip.vehicleSummary || plate,
+    start: trip.start || '',
+    departure: trip.departure || '',
+    distance: trip.distance || '',
+    duration: trip.duration || '',
+    fuelCost: typeof trip.fuelCost === 'number' ? trip.fuelCost : null,
+    stopCount: trip.stopCount || 0,
+    groups: [{
+      vehiclePlate: plate,
+      vehicleModel: model,
+      distance: trip.distance || '',
+      duration: trip.duration || '',
+      fuelCost: typeof trip.fuelCost === 'number' ? trip.fuelCost : null,
+      stopCount: trip.stopCount || 0,
+      rows: trip.rows
+    }]
+  };
+  return converted;
+}
 
 function exists(table, id) {
   return !!db.prepare('SELECT 1 FROM ' + table + ' WHERE id = ?').get(id);
@@ -74,7 +111,8 @@ function exists(table, id) {
   catch (e) { console.warn('Araç atlandı (' + (veh && veh.plate) + '): ' + e.message); stats.skipped++; }
 });
 
-(data.history || []).forEach(function (trip) {
+(data.history || []).forEach(function (rawTrip) {
+  var trip = migrateLegacyTrip(rawTrip);
   if (trip && trip.id && exists('trips', trip.id)) {
     if (!replace) { stats.skipped++; return; }
     store.removeTrip(trip.id);
@@ -90,7 +128,8 @@ if (data.tomtomApiKey) { store.setTomTomApiKey(data.tomtomApiKey); stats.setting
 console.log('İçe aktarma tamamlandı:');
 console.log('  lokasyon : ' + stats.locations);
 console.log('  araç     : ' + stats.vehicles);
-console.log('  sefer    : ' + stats.trips);
+console.log('  sefer    : ' + stats.trips +
+  (stats.migrated ? '  (' + stats.migrated + ' tanesi eski tek-araç formatından dönüştürüldü)' : ''));
 console.log('  ayar     : ' + stats.settings);
 console.log('  atlanan  : ' + stats.skipped + (replace ? '' : '  (--replace ile üzerine yazılabilir)'));
 console.log('Veritabanı: ' + d.DB_PATH);
