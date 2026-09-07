@@ -1,6 +1,13 @@
 # TSS — Rota Planlama Paneli
 
-Backend'siz, tarayıcıda çalışan sefer planlama arayüzü. `index.html` dosyasını çift tıklayarak açmak yeterli.
+Tarayıcıda çalışan sefer planlama arayüzü. **İki şekilde kullanılabilir:**
+
+- **Tek kişilik / kurulumsuz:** `index.html` dosyasını çift tıkla — veri
+  yalnızca o tarayıcının `localStorage`'ında tutulur (eski davranış, birebir
+  korundu).
+- **Ekip / çoklu cihaz:** `server/` altındaki backend'i çalıştır (bkz. aşağı) —
+  lokasyon, araç, sefer geçmişi ve ayarlar SQLite'ta ortak tutulur, aynı ağdaki
+  herkes aynı veriyi görür.
 
 ## Klasör
 
@@ -10,14 +17,43 @@ tss-rota-panel/
 ├── styles.css
 ├── logo-white.png      ← buraya bırakılırsa başlıkta görünür (yoksa yazı ile düşer)
 ├── vendor/             Leaflet, SheetJS, jsPDF, html2canvas, Outfit — hepsi yerel
-└── js/
-    ├── data.js         lokasyon/araç/durak verisi, Excel içe aktarma
-    ├── osrm.js         gerçek yol mesafesi ve güzergah geometrisi
-    ├── optimizer.js    kapasiteli sıralama optimizasyonu (tek araç, tek grup)
-    ├── fleet.js        çoklu araç ataması: kümeleme + optimizer.js'i grup başına çağırma
-    ├── exporter.js     Excel ve PDF çıktısı
-    └── app.js          arayüz akışı
+├── js/
+│   ├── data.js         lokasyon/araç/durak verisi, Excel içe aktarma, backend senkronu
+│   ├── osrm.js         gerçek yol mesafesi ve güzergah geometrisi
+│   ├── tomtom.js       opsiyonel canlı trafik (kullanıcı kendi API key'ini girerse)
+│   ├── weather.js      durak bazlı hava durumu uyarıları (Open-Meteo)
+│   ├── fuelprice.js    ulusal ortalama akaryakıt fiyatı
+│   ├── optimizer.js    kapasiteli sıralama optimizasyonu (tek araç, tek grup)
+│   ├── fleet.js        çoklu araç ataması: kümeleme + optimizer.js'i grup başına çağırma
+│   ├── exporter.js     Excel ve PDF çıktısı
+│   └── app.js          arayüz akışı
+└── server/             (opsiyonel) Express + SQLite backend — bkz. server/README.md
+    ├── index.js        REST endpoint'leri + statik dosya sunumu + token kontrolü
+    ├── db.js           SQLite şeması
+    ├── store.js        CRUD + doğrulama (js/data.js ile aynı kurallar)
+    └── scripts/        localStorage içe aktarma + otomatik testler
 ```
+
+## Backend ile çalıştırma (ekip kullanımı)
+
+```bash
+cd server
+npm install
+cp .env.example .env     # APP_TOKEN'ı doldur (LAN paylaşımında şart)
+npm start
+```
+
+Sonra `http://localhost:3000`. Aynı ağdaki diğer cihazlar
+`http://<sunucu-makinenin-ip'si>:3000` ile bağlanır; ilk açılışta erişim
+anahtarı bir kez sorulur ve o tarayıcıda saklanır.
+
+Panel, bir sunucudan servis edildiğini kendisi anlar: `file://` ile açılırsa
+backend'e hiç bağlanmaz, eskisi gibi yalnızca `localStorage` ile çalışır.
+Mevcut tarayıcı verisini SQLite'a aktarmak için bkz. `server/README.md`.
+
+Yazma işlemleri arayüzü hiç bekletmez: değişiklik anında ekranda görünür,
+arka planda sunucuya iletilir. Bağlantı yoksa değişiklikler kuyrukta
+(outbox) bekler ve bağlantı gelince otomatik gönderilir.
 
 ## Kullanım
 
@@ -115,6 +151,11 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
   fiyat gelmez, kullanıcı Trafik Ayarları > Yakıt'tan elle girer (bkz. yukarı).
 - **Yakıt tüketimi varsayılanları tahminidir:** gerçek filo verisiyle
   (yakıt fişi/depo kaydı) güncellenmedikçe yakıt maliyeti kaba bir tahmindir.
+- **Ekip senkronizasyonu anlık değil:** backend kullanılırken başka bir cihazın
+  yaptığı değişiklik, panel yenilendiğinde (sayfa açılışında) gelir — canlı
+  push/websocket yok. Aynı kaydı iki kişi aynı anda düzenlerse son yazan kazanır.
+- **Taslak duraklar ve hesaplanan plan paylaşılmaz:** backend'e hiç gitmez,
+  sayfa yenilenince sıfırlanır (bilinçli — "o anki taslak sefer" kalıcı olmamalı).
 - PDF'e harita gömme tarayıcı güvenlik kısıtlarına takılırsa rapor tablo ile üretilir ve durum PDF üzerinde belirtilir.
 
 ## Devam edecek geliştiriciler için
@@ -134,19 +175,23 @@ almaya karar verirse, önce şunları çözmesi gerekiyor:
     değerini değiştirerek ona yönlendirmek gerekir (README'nin "Bilinen sınırlar"
     bölümünde de geçiyor).
 
-- **Veri kalıcılığı sadece `localStorage`'da** (`js/data.js`). Backend/veritabanı yok.
-  Canlıya alınırsa:
-  - Veri tek tarayıcıya/cihaza bağlı kalır — ekip içinde paylaşılmaz, farklı
-    bilgisayardan girildiğinde lokasyon/araç/geçmiş görünmez.
-  - Kullanıcı tarayıcı verisini temizlerse (ya da farklı bir profil/gizli sekme
-    kullanırsa) tüm lokasyonlar, araçlar ve sefer geçmişi geri dönüşü olmayan
-    şekilde silinir. Yedekleme mekanizması yok.
-  - Çözüm: canlıya alınacaksa bu katmanın gerçek bir backend + veritabanına
-    taşınması gerekir; `js/data.js`'teki `TSSData` arayüzü (aynı fonksiyon
-    imzaları) korunursa üstteki kod (`app.js`, `fleet.js` vb.) değişmeden kalabilir.
+- ~~**Veri kalıcılığı sadece `localStorage`'da**~~ — **çözüldü** (`server/`):
+  artık opsiyonel bir Express + SQLite backend var, veri ekip içinde paylaşılıyor
+  ve yedeklenebiliyor (`server/data/tss.db` dosyasını kopyalamak yeterli).
+  `TSSData` arayüzü aynen korundu, `app.js`/`fleet.js`/`exporter.js` değişmedi.
+  Kalan sınırlar:
+  - Backend çalıştırılmazsa (`file://` ile açma) davranış eskisi gibi: veri tek
+    tarayıcıya bağlı, tarayıcı verisi temizlenirse kaybolur.
+  - Çakışma politikası v1'de **son yazan kazanır** — aynı kaydı iki kişi aynı
+    anda düzenlerse biri sessizce diğerinin üzerine yazar (şemada `updated_at`
+    var, ileride çakışma tespiti eklenebilir).
+  - Erişim kontrolü tek paylaşılan anahtar (`APP_TOKEN`); kullanıcı hesabı,
+    kimlik veya rol/yetki yönetimi yok — küçük bir LAN ekibi için tasarlandı.
 
-- **Otomatik test yok.** Hiçbir dosyada unit/integration test bulunmuyor. Özellikle
-  `js/optimizer.js` ve `js/fleet.js` (rota/kümeleme algoritması) üzerinde değişiklik
-  yapmadan önce en azından bu iki dosya için birkaç senaryo testi (bilinen
-  giriş/mesafe matrisi → beklenen sıralama/kısıt ihlali) eklemek regresyonları
-  yakalamak açısından faydalı olur.
+- **Otomatik test durumu:** backend ve `js/data.js`'in senkronizasyon katmanı
+  için testler var (`cd server && npm test` → 80 test: REST yüzeyi, doğrulama,
+  outbox/çevrimdışı davranışı, `file://` modu). Ancak **`js/optimizer.js` ve
+  `js/fleet.js` (rota/kümeleme algoritması) hâlâ testsiz** — bu iki dosyada
+  değişiklik yapmadan önce birkaç senaryo testi (bilinen giriş/mesafe matrisi →
+  beklenen sıralama/kısıt ihlali) eklemek regresyonları yakalamak açısından
+  faydalı olur. Arayüz akışları da elle test edilmeli.

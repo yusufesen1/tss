@@ -22,13 +22,14 @@ anlatır. Hedef kitle: projeye sonradan dahil olacak / bakım yapacak geliştiri
 12. [Güvenlik notları](#12-güvenlik-notları)
 13. [Bilinen sınırlar ve production riskleri](#13-bilinen-sınırlar-ve-production-riskleri)
 14. [Devam edecek geliştiriciler için yol haritası](#14-devam-edecek-geliştiriciler-için-yol-haritası)
+15. [Backend (`server/`) — opsiyonel veri katmanı](#15-backend-server--opsiyonel-veri-katmanı)
 
 ---
 
 ## 1. Amaç ve kapsam
 
 Uygulama, bir lojistik/sefer planlama ekibinin **günlük araç turlarını** planlamasını
-sağlayan, backend'siz, tarayıcıda çalışan bir araçtır:
+sağlayan, tarayıcıda çalışan bir araçtır:
 
 - Bir hareket noktasından çıkıp birden fazla lokasyonda yükleme/boşaltma yapacak
   seferler tanımlanır (kapasiteli pickup-and-delivery problemi).
@@ -40,8 +41,19 @@ sağlayan, backend'siz, tarayıcıda çalışan bir araçtır:
   düzenlenir, onaylanır (sefer geçmişine düşer) ve Excel/PDF olarak dışa
   aktarılır.
 
-Kasıtlı olarak **backend'siz**: kurulum/deploy karmaşıklığı olmadan `index.html`
-çift tıklanarak veya basit bir statik dosya sunucusundan açılabilsin diye.
+**Çalıştırma modeli — iki mod, tek kod tabanı:**
+
+| | Kurulumsuz mod | Ekip modu |
+|---|---|---|
+| Nasıl açılır | `index.html` çift tıklanır (`file://`) | `node server/index.js` → `http://localhost:3000` |
+| Veri nerede | Yalnızca o tarayıcının `localStorage`'ı | SQLite (`server/data/tss.db`), ekip içinde ortak |
+| Kurulum | Yok | Bir kez `npm install` |
+| Paylaşım | Yok | Aynı LAN'daki tüm cihazlar |
+
+Panel hangi modda çalıştığını kendisi anlar (`autoConfigureRemote()`, §5.4):
+`file://` altında backend'e hiç bağlanmaz. Bu, projenin başından beri süren
+"kurulum/deploy karmaşıklığı olmadan çift tıkla aç" tasarım hedefinin
+korunması içindir — backend eklendi ama **zorunlu hale getirilmedi**.
 
 ---
 
@@ -53,33 +65,45 @@ Kasıtlı olarak **backend'siz**: kurulum/deploy karmaşıklığı olmadan `inde
 │  (DOM iskeleti, modal'lar, <script> yükleme sırası)           │
 └─────────────────────────────────────────────────────────────┘
         │
-        ▼  script sırası: data → osrm → tomtom → weather → optimizer → fleet → exporter → app
-┌───────────────┐   ┌──────────┐   ┌───────────┐   ┌───────────┐
-│   data.js      │   │ osrm.js  │   │ tomtom.js │   │ weather.js│   (dış servis istemcileri /
-│  (state +      │   │ (mesafe/ │   │ (canlı    │   │ (hava     │    veri katmanı — birbirinden
-│  localStorage) │   │  rota)   │   │  trafik)  │   │  durumu)  │    bağımsız)
-└───────┬────────┘   └────┬─────┘   └─────┬─────┘   └─────┬─────┘
-        │                 │                │               │
-        │        ┌────────▼────────┐       │               │
-        │        │  optimizer.js    │       │               │
-        │        │  (tek araç sıra- │       │               │
-        │        │  lama algoritması)│      │               │
-        │        └────────┬─────────┘       │               │
-        │                 │                 │               │
-        │        ┌────────▼─────────┐       │               │
-        │        │    fleet.js       │◀─────┘               │
-        │        │ (çoklu araç       │  (replayGroupWithLiveLegs) │
-        │        │  kümeleme/atama)  │      │                │
-        │        └────────┬──────────┘      │                │
-        │                 │                 │                │
-        └─────────────────┼─────────────────┴────────────────┘
-                           ▼
-                  ┌─────────────────┐        ┌──────────────┐
-                  │     app.js       │──────▶│ exporter.js   │
-                  │ (DOM binding,    │        │ (Excel/PDF)   │
-                  │  harita, tablo,  │        └──────────────┘
-                  │  modal yönetimi) │
-                  └─────────────────┘
+        ▼  script sırası: data → osrm → tomtom → weather → fuelprice → optimizer → fleet → exporter → app
+
+TARAYICI
+├── VERİ / DIŞ SERVİS KATMANI  (birbirinden bağımsız istemciler)
+│   ┌──────────────┐ ┌─────────┐ ┌──────────┐ ┌───────────┐ ┌─────────────┐
+│   │  data.js     │ │ osrm.js │ │tomtom.js │ │weather.js │ │fuelprice.js │
+│   │ state +      │ │ mesafe/ │ │  canlı   │ │   hava    │ │  TL/L fiyat │
+│   │ localStorage │ │  rota   │ │  trafik  │ │  durumu   │ │             │
+│   │ + outbox     │ └────┬────┘ └────┬─────┘ └─────┬─────┘ └──────┬──────┘
+│   └──────┬───────┘      │           │             │              │
+│          │              │           │             │              │
+├── ALGORİTMA KATMANI (saf JS, DOM'a hiç dokunmaz)                 │
+│   ┌──────▼───────────┐  │           │             │              │
+│   │  optimizer.js    │  │ (mesafe/süre matrisi)   │              │
+│   │  tek araç sıralama│◀─┘           │             │              │
+│   └──────┬───────────┘               │             │              │
+│   ┌──────▼───────────┐               │             │              │
+│   │  fleet.js        │◀──────────────┘             │              │
+│   │  çoklu araç      │  (replayGroupWithLiveLegs)  │              │
+│   │  kümeleme/atama  │                             │              │
+│   └──────┬───────────┘                             │              │
+│          │                                         │              │
+└── ARAYÜZ KATMANI                                   │              │
+    ┌──────▼──────────────────────────────────────────────────────────┐
+    │  app.js — DOM binding, Leaflet haritası, tablo/modal yönetimi    │
+    └──────┬───────────────────────────────────────────────┬──────────┘
+           │                                               ▼
+           │                                    ┌────────────────────┐
+           │                                    │    exporter.js     │
+           │                                    │    Excel / PDF     │
+           │                                    └────────────────────┘
+           │
+           ▼  OPSİYONEL (yalnızca http(s) ile servis edildiğinde — §5.4)
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  server/  Express + SQLite                                        │
+    │  • GET /api/bootstrap  → açılışta veri (yerel önbellekten sonra)  │
+    │  • POST/PUT/PATCH/DELETE → yazmalar, data.js outbox'ı üzerinden   │
+    │  • X-TSS-Token erişim kontrolü + statik dosya sunumu (aynı origin)│
+    └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Modül deseni:** Her `js/*.js` dosyası bir IIFE içinde tanımlanır ve `window`
@@ -126,9 +150,11 @@ teorik olarak Node.js'te de (tarayıcı olmadan) test edilebilir/çalıştırıl
 | Harita → görüntü | [html2canvas](vendor/html2canvas.min.js) | PDF'e harita gömmek için ekran görüntüsü alır |
 | PDF Türkçe font | `vendor/fonts/pdf-font-arial.js` | jsPDF'in gömülü Helvetica'sı `ı,ş,ğ,ç,ö,ü` içermediği için Arial TTF base64 olarak gömülü |
 | Yazı tipi (UI) | [Outfit](vendor/fonts/outfit.css) (woff2, yerel) | Google Fonts CDN değil |
-| Kalıcılık | `localStorage` (tek anahtar: `tss-rota-panel-v1`) | Backend/veritabanı yok |
-| Test altyapısı | **Yok** | Bkz. §14 |
-| Build/bundler | **Yok** | Dosyalar doğrudan `<script>` ile sırayla yükleniyor |
+| Kalıcılık (kurulumsuz mod) | `localStorage` (tek anahtar: `tss-rota-panel-v1`, outbox: `tss-outbox-v1`) | Backend çalışmıyorsa tek kalıcılık katmanı |
+| Kalıcılık (ekip modu) | SQLite (`better-sqlite3`, tek dosya `server/data/tss.db`) | Gerçek veri kaynağı; `localStorage` önbelleğe düşer — bkz. §5.4, §15 |
+| Backend (opsiyonel) | Node.js + [Express](https://expressjs.com/) 5 | `server/index.js` — REST + statik sunum + `X-TSS-Token`; frontend ile aynı origin, CORS yok |
+| Test altyapısı | `server/scripts/` — 80 test (smoke 46 + sync 34), `cd server && npm test` | `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz, bkz. §13/§14 |
+| Build/bundler | **Yok** | Dosyalar doğrudan `<script>` ile sırayla yükleniyor; backend'de de derleme adımı yok |
 
 ---
 
@@ -139,16 +165,23 @@ index.html          DOM iskeleti + script yükleme sırası
 styles.css           Tüm görsel tasarım (tasarım sistemi: bkz. "Turkish Support
                       Services — Design System.md")
 js/
-  data.js    (491 satır)  Veri modeli, localStorage, Excel satır normalizasyonu, TomTom key
+  data.js    (879 satır)  Veri modeli, localStorage, Excel satır normalizasyonu,
+                           TomTom key + BACKEND SENKRONİZASYONU (outbox, bkz. §5.4)
   osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
   tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
-  fuelprice.js            data/fuel-price.json istemcisi (ulusal ortalama TL/L, bkz. §10.4)
+  fuelprice.js ( 63 satır) data/fuel-price.json istemcisi (ulusal ortalama TL/L, bkz. §10.4)
   optimizer.js (367 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
   fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
-  exporter.js (458 satır) Excel/PDF üretimi
-  app.js    (~2260 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
+  exporter.js (472 satır) Excel/PDF üretimi
+  app.js    (~2515 satır) UI orkestrasyonu — en büyük dosya, diğer 8 modülü bağlar
 vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
+server/               OPSİYONEL backend (Express + SQLite) — bkz. §15
+  index.js   (144 satır)  REST endpoint'leri, X-TSS-Token kontrolü, statik dosya sunumu
+  db.js      (174 satır)  SQLite şeması + satır ↔ frontend nesnesi dönüşümleri
+  store.js   (265 satır)  CRUD + doğrulama (js/data.js ile birebir aynı kurallar)
+  defaults.js ( 45 satır) js/data.js DEFAULT_* sabitlerinin kopyası (ilk tohumlama)
+  scripts/                localStorage içe aktarma + smoke (46) ve sync (34) testleri
 ```
 
 ### Dosya sorumlulukları (tek satır özet)
@@ -221,6 +254,12 @@ Alan detayları:
 
 ### 5.2 Kalıcılık
 
+> **Backend varsa (bkz. §5.4 ve §15):** gerçek veri kaynağı SQLite'tır;
+> aşağıdaki `localStorage` katmanı o durumda **açılış önbelleği + outbox
+> tamponu** rolüne düşer, ama mekanizması aynen korunur. Backend
+> çalıştırılmazsa (ör. `index.html` çift tıklanarak `file://` ile açıldıysa)
+> bu bölüm tek kalıcılık katmanıdır ve davranış birebir eskisi gibidir.
+
 - Tek `localStorage` anahtarı: `tss-rota-panel-v1`.
 - `save()` şu alt kümeyi JSON'a çevirip yazar: `locations, vehicles, history,
   traffic, tomtomApiKey, fuel` (`stops` ve `plan` KALICI DEĞİL — sayfa
@@ -237,6 +276,53 @@ Alan detayları:
 (`ı→i, ş→s, ğ→g, ü→u, ö→o, ç→c`) ve alfanümerik olmayanı siler — böylece
 "Enlem", "enlem ", "Lat", "latitude", "Y" gibi farklı başlık varyasyonları aynı
 alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:369-377`).
+
+### 5.4 Backend senkronizasyonu (opsiyonel)
+
+`data.js`'in ikinci yarısı (`configureRemote` ve sonrası) backend katmanını
+içerir. **Tasarımın tek kuralı:** `TSSData`'nın dışa açık fonksiyonları
+senkron kalır. `js/app.js`'te bu fonksiyonlara 60'tan fazla çağrı noktası var
+ve hiçbiri `.then()`/`await` beklemiyor (sonucu aynı satırda kullanıyorlar) —
+bu yüzden hiçbiri asenkron yapılmadı, **hiçbir çağrı noktası değiştirilmedi**.
+
+**Nasıl:** yazma fonksiyonları export sınırında ince bir sarmalayıcıyla
+(`syncing()`) sarılır. Orijinal fonksiyon önce aynen çalışıp değerini döndürür
+(çağıran kod hiçbir fark görmez), ardından karşılık gelen REST isteği outbox'a
+yazılır. Fonksiyon gövdelerinin hiçbiri değişmedi.
+
+```
+Kullanıcı değişiklik yapar
+        ↓
+Local state + localStorage güncellenir → UI ANINDA güncellenir (senkron)
+        ↓
+İşlem outbox'a yazılır  (localStorage anahtarı: tss-outbox-v1)
+        ↓
+Backend'e gönderilmeye çalışılır
+        ↓
+Başarılı → kuyruktan sil        Başarısız → kuyrukta kalır, tekrar denenir
+```
+
+- **Outbox** sıralıdır (bağımlı işlemler için: "ekle" sonra "sil") ve
+  `localStorage`'da durduğu için sayfa kapansa bile kaybolmaz. Yeniden deneme
+  tetikleyicileri: her yazma, tarayıcının `online` olayı, 30 sn'lik periyodik
+  zamanlayıcı ve sayfa açılışı.
+- **Hata sınıflandırması:** `401` → kuyruk korunur, kullanıcıdan erişim
+  anahtarı istenir (§12); `4xx` → istek asla başarılı olmayacağı için kuyruğu
+  tıkamasın diye düşürülür ve kullanıcıya bildirilir; `5xx`/ağ hatası → tekrar
+  denenir.
+- **Okuma/tazeleme (`syncFromRemote`)**: ÖNCE outbox boşaltılır, SONRA
+  `GET /api/bootstrap` çekilir. Sıra kritiktir — bekleyen yerel yazmalar
+  sunucuya gitmeden sunucu verisi uygulanırsa o değişiklikler kaybolurdu.
+  Başarılıysa `onRemoteSync` dinleyicileri tetiklenir ve `app.js` tabloları
+  yeniden çizer (açılışta önce yerel önbellek görünür, sunucu verisi gelince
+  sessizce tazelenir — `js/fuelprice.js`'in açılış desenının aynısı).
+- **`autoConfigureRemote()`**: sayfa `http(s)` ile servis ediliyorsa backend
+  devreye girer, `file://` ile açıldıysa hiç çalışmaz. `js/app.js` `init()`
+  içinde bir kez çağırır.
+- **`stops` ve `plan` backend'e hiç gitmez** — bugünkü gibi tarayıcıda kalan
+  geçici taslak veridir.
+- **Çakışma politikası (v1):** son yazan kazanır. Şemada `updated_at` var ama
+  şu an kullanılmıyor — ileride çakışma tespiti eklenmek istenirse zemin hazır.
 
 ---
 
@@ -944,10 +1030,20 @@ tabloyu **canlı** yeniden çizer.
   kaynaklı veriler `innerHTML`'e yazılmadan önce **her yerde**
   `escapeHtml()` ile kaçışlanıyor (`app.js:42-49`) — kötü niyetli bir isim
   (`<img onerror=...>` gibi) sayfada script çalıştıramaz.
-- **Veri güvenilirliği:** Tüm veri tarayıcı tarafında, tek kullanıcı
-  bağlamında tutulduğu için sunucu tarafı yetkilendirme/doğrulama yok —
-  bu, uygulamanın **tek kullanıcılı/dahili araç** olarak tasarlandığının
-  bir yansıması (bkz. §13).
+- **Veri güvenilirliği:** Backend'siz kullanımda tüm veri tarayıcı
+  tarafında, tek kullanıcı bağlamında tutulur — sunucu tarafı
+  yetkilendirme/doğrulama yoktur. Backend kullanıldığında (§15) sunucu
+  gelen her isteği kendi de doğrular (`server/store.js`, kurallar
+  `js/data.js` ile birebir aynı): istemciye güvenilmez.
+- **Erişim kontrolü (`APP_TOKEN`):** LAN paylaşımında `/api/*` istekleri
+  tek bir paylaşılan anahtarla korunur; anahtar **yalnızca `X-TSS-Token`
+  başlığında** taşınır, URL query string'inde asla kabul edilmez (tarayıcı
+  geçmişi, sunucu logları ve `Referer` başlığı üzerinden sızmasın diye).
+  Anahtar kullanıcının tarayıcısında `localStorage`'da (`tss-remote-token-v1`)
+  saklanır, repoya hiç girmez (`server/.env`, `.gitignore`'da). Bu bir
+  **authentication sistemi değildir**: kullanıcı kimliği, rol/yetki ve
+  denetim izi yoktur — küçük, güvenilen bir LAN ekibi için v1 kapısıdır.
+  İnternete açılacaksa gerçek kimlik doğrulama ve HTTPS gerekir.
 - **TomTom API key:** `localStorage`'da düz metin olarak saklanır (diğer
   hiçbir alan gibi şifrelenmez) ve her istekte URL query string'i olarak
   (Network sekmesinde görünür şekilde) gönderilir — sunucu tarafı bir proxy
@@ -967,13 +1063,16 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Sınır | Teknik sebep | Etkisi |
 |---|---|---|
 | OSRM halka açık demo sunucusu | `osrm.js`'teki sabit `BASE` | Canlıda rate-limit/SLA yokluğu — bkz. README §"Devam edecek geliştiriciler için" |
-| Sadece `localStorage` kalıcılık | Backend/DB yok | Tek tarayıcıya bağlı, ekip içi paylaşım yok, veri kaybı riski |
+| ~~Sadece `localStorage` kalıcılık~~ → **çözüldü** (§15) | Opsiyonel Express + SQLite backend eklendi | Backend çalıştırılırsa veri ekip içinde paylaşılır ve yedeklenebilir. Backend'siz kullanımda (`file://`) eski sınır aynen geçerli |
+| Ekip senkronizasyonu anlık değil | Sunucudan veri yalnızca açılışta (ve `syncFromRemote()` ile) çekiliyor; push/websocket yok | Başka bir cihazın değişikliği panel yenilenince görünür |
+| Çakışma politikası: son yazan kazanır | v1'de bilinçli sadelik (§5.4); şemada `updated_at` var ama kullanılmıyor | Aynı kaydı aynı anda düzenleyen iki kişiden biri diğerinin üzerine sessizce yazar |
+| Erişim kontrolü tek paylaşılan anahtar | `APP_TOKEN` + `X-TSS-Token` (§12) — kullanıcı hesabı/rol yok | Anahtarı bilen herkes tüm veriye erişir; kim ne değiştirdi izlenemez |
 | Yasak güzergah kısıtı yok | OSRM demo sunucusu özel `exclude` profili desteklemiyor | Köprü/tonaj kısıtları rotaya yansımaz — sadece onay notuna elle yazılabilir |
 | Kümeleme kesin optimum değil | Sezgisel farthest-point seeding, tek geçiş | Çok sayıda dağınık durakta teorik en iyi bölüştürme garanti edilmez |
 | Büyük durak bölüştürme sezgiseldir, kesin optimum değil | `distributeBigStop()` en-yakın-kümeden-başlayarak açgözlü (greedy) doldurma yapar (bkz. §8.6), gerçek bir VRP çözücü değil | Nadir kombinasyonlarda (örn. `initialLoad` bir kümenin ihtiyacını tek başına her aracın kapasitesinin üstüne çıkarıyorsa, ya da tüm arzı sağlayan tek bir büyük yükleme normal boşaltmalardan coğrafi olarak uzaksa) hâlâ önlenebilir olmayan bir kalıntı ihlal görülebilir — filo toplamda yeterliyken bile. Algoritma bunu her zaman **mümkün olan en az** ihlale indirger ve `warning` alanında açıkça bildirir, ama sıfıra indirme garantisi yoktur |
 | Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
 | TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
-| Otomatik test yok | — | `optimizer.js`/`fleet.js` değişikliklerinde regresyon elle test edilmeli |
+| Otomatik test **kısmen** var | `server/` ve `js/data.js` senkron katmanı için 80 test (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
 | Yakıt fiyatı dolaylı/gecikmeli | Kaynak servis CORS'a kapalı olduğundan tarayıcı `data/fuel-price.json`'ı okuyor, o dosya da GitHub Actions ile 6 saatte bir güncelleniyor (bkz. §10.4) | Repo bir GitHub uzak sunucusuna (`origin`) bağlı değilse ya da Actions devre dışı bırakılırsa otomatik fiyat hiç gelmez, kullanıcı elle girmek zorunda kalır — uygulama yine çalışır, sadece "Fiyat girilmedi" gösterir |
 | Yakıt tüketimi varsayılanı tahmini | `DEFAULT_VEHICLES.fuelConsumption` üreticinin karma çevrim ortalaması, gerçek/yüklü sahne verisi değil | Gerçek filo verisi (yakıt fişi) girilene kadar yakıt maliyeti tahmini olduğundan sapabilir — araç bazında Araçlar modalından elle düzeltilmesi önerilir |
 
@@ -981,35 +1080,87 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 
 ## 14. Devam edecek geliştiriciler için yol haritası
 
-Bu proje şu an **canlıya alınması planlanmıyor** — mevcut haliyle bir
-dahili/demo araç olarak kalabilir. İleride biri canlıya almaya karar verirse
-öncelik sırası:
+**✔ Tamamlandı — kalıcılığın backend'e taşınması (§15).** Bu maddenin
+kendisi (eski 2. sıra) uygulandı: `TSSData` arayüzü aynen korunarak
+opsiyonel bir Express + SQLite backend eklendi; `app.js`/`fleet.js`/
+`exporter.js`'te tek satır değişmedi, `app.js`'e yalnızca açılışta
+senkronizasyonu başlatan birkaç satır eklendi.
+
+Kalan öncelik sırası:
 
 1. **Kendi OSRM örneğini kur**, `TSSOsrm.setBase()` ile veya `osrm.js`
    içindeki `BASE`'i değiştirerek yönlendir — demo sunucu ile sürekli/ticari
-   trafiğe çıkmak güvenli değil.
-2. **Kalıcılığı backend'e taşı** — `TSSData` arayüzünün (fonksiyon
-   imzaları: `addLocation`, `addVehicle`, `approveTrip`, `getHistory` vb.)
-   korunması, üstteki `app.js`/`fleet.js`/`exporter.js` kodunun
-   değişmeden kalmasını sağlar (implementasyon detayı `data.js` içine
-   hapsedilmiş — bu ayrım bilinçli).
-3. **`optimizer.js` ve `fleet.js` için senaryo testleri** ekle — bilinen
+   trafiğe çıkmak güvenli değil. Artık bir backend olduğu için OSRM
+   isteklerini de sunucu üzerinden proxy'lemek (ve önbelleklemek) mümkün.
+2. **`optimizer.js` ve `fleet.js` için senaryo testleri** ekle — bilinen
    girdi (durak listesi + mesafe matrisi) → beklenen sıralama/ihlal
    çıktısı; bu iki dosya saf fonksiyonlar olduğu için (DOM'a bağımlı değil)
-   test edilmesi kolay, sadece hiç yapılmamış.
-4. Yasak güzergah kısıtı gibi README'de "sonraki faz" olarak işaretlenmiş
+   test edilmesi kolay, sadece hiç yapılmamış. `server/scripts/`'teki test
+   yapısı örnek alınabilir.
+3. **TomTom key'i server-side'a taşı** — backend artık var: `js/tomtom.js`'in
+   `routeLeg` imzası değişmeden, implementasyonu backend'de bir
+   `/api/tomtom/route-leg` proxy'sine döndürülürse key tarayıcıya hiç
+   inmez (§12'deki kalan risk kapanır).
+4. **Gerçek kimlik doğrulama** — mevcut tek paylaşılan `APP_TOKEN`,
+   kullanıcı bazlı kimlik/rol/denetim izi gerektiğinde yetersiz kalır (§12).
+5. Yasak güzergah kısıtı gibi README'de "sonraki faz" olarak işaretlenmiş
    genişletmeler. Gerçek trafik verisi için TomTom entegrasyonu (§10.3)
    kısmen bu ihtiyacı karşılıyor — bir sonraki adım bunu "En Az Süre"
    modunun ötesine, sıralama kararının kendisine de (şu an sadece OSRM
    matrix'i kullanılıyor) taşımak olabilir, ancak bu TomTom'un ücretli
    matrix endpoint'ini gerektirir.
+6. **Canlı ekip senkronizasyonu** (SSE/WebSocket) — şu an sunucudan veri
+   yalnızca sayfa açılışında çekiliyor.
 
 ---
 
-*Bu doküman, kod tabanının mevcut hali (2026-09-07 itibarıyla, TomTom canlı
+## 15. Backend (`server/`) — opsiyonel veri katmanı
+
+Ayrıntılı kurulum/çalıştırma ve endpoint tablosu için: **`server/README.md`**.
+Buradaki özet, mimari kararların gerekçesi:
+
+- **Neden Express + SQLite:** mevcut JS yığınıyla aynı dil (yeni bir dil/
+  çalışma zamanı yok), tek dosyalık veritabanı (`server/data/tss.db`) —
+  ayrı bir DB sunucusu kurmak, yönetmek, yedeklemek gerekmiyor; yedek almak
+  dosyayı kopyalamak demek. WAL modu açık, eşzamanlı okuma/yazma güvenli.
+- **Statik dosyalar da aynı sunucudan** servis edilir (`express.static`) —
+  frontend ve API aynı origin'de olduğu için CORS yapılandırması hiç
+  gerekmiyor. Kullanım: `node server/index.js` → `http://localhost:3000`.
+- **LAN paylaşımı:** `0.0.0.0`'a bind edilir; aynı ağdaki cihazlar
+  `http://<sunucu-ip>:3000` ile bağlanır. Erişim `APP_TOKEN` ile korunur
+  (bkz. §12).
+- **Şema, `state` şeklini birebir yansıtır** (§5.1): `locations`,
+  `vehicles`, `trips`, `settings`. Sefer geçmişi zaten "hafif özet" olarak
+  üretildiği için (bkz. `approveTrip`) gruplar/satırlar ilişkisel tablolara
+  parçalanmadı, JSON blob olarak saklanıyor — burada round-trip sadakati
+  (aynı nesnenin aynen geri gelmesi) ilişkisel saflıktan daha değerli.
+  Her tabloda `created_at`/`updated_at` var (§5.4 çakışma notu).
+- **Doğrulama iki tarafta da aynı:** `server/store.js`'teki kurallar
+  `js/data.js`'teki `addLocation`/`addVehicle`/`updateVehicle` ile birebir
+  eşleşir. Eşleşmezse iyimser (optimistic) güncelleme yüzünden kullanıcı
+  kaydı ekranda görür ama sunucu reddeder — bu yüzden bu iki dosya birlikte
+  değiştirilmelidir.
+- **İlk tohumlama:** boş bir veritabanı ilk açılışta `server/defaults.js`
+  (= `js/data.js`'teki `DEFAULT_*` kopyası) ile doldurulur; kullanıcı
+  backend'e geçtiğinde bugünküyle aynı başlangıç listesini görür.
+- **Mevcut veriyi taşıma:** `node server/scripts/import-localstorage.js
+  <yedek.json>` — tarayıcı konsolundan alınan `tss-rota-panel-v1` içeriğini
+  SQLite'a aktarır, tekrar çalıştırmak güvenlidir.
+- **Testler:** `cd server && npm test` → `smoke-test.js` (46 test: REST
+  yüzeyi, erişim kontrolü, doğrulama, ayar merge'i, geçmiş JSON round-trip'i)
+  ve `sync-test.js` (34 test: **gerçek `js/data.js`** Node içinde sahte
+  `window`/`localStorage` ile gerçek backend'e karşı — senkron sözleşme,
+  outbox, çevrimdışı davranış, `file://` modunda hiç ağ isteği yapılmaması).
+
+---
+
+*Bu doküman, kod tabanının mevcut hali (2026-09-07 itibarıyla; TomTom canlı
 trafik entegrasyonu, "En Az Süre" optimizasyon modu, eşitlenmiş kapasite/
-erişim saati ceza katsayıları ve gece yarısını saran erişim penceresi
-desteği dahil) üzerinden elle incelenerek hazırlanmıştır/revize edilmiştir.
-Kaynak dosyalar değiştikçe güncel tutulmalıdır — özellikle §7/§8/§10.3'teki
-algoritma ve entegrasyon açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in
-birebir güncel haliyle senkron kalmalı.*
+erişim saati ceza katsayıları, gece yarısını saran erişim penceresi desteği
+ve **opsiyonel Express + SQLite backend'i (§5.4, §15)** dahil) üzerinden elle
+incelenerek hazırlanmıştır/revize edilmiştir. Kaynak dosyalar değiştikçe
+güncel tutulmalıdır — özellikle §7/§8/§10.3'teki algoritma ve entegrasyon
+açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in, §5.4/§15'teki
+senkronizasyon açıklamaları da `js/data.js`/`server/`'ın birebir güncel
+haliyle senkron kalmalı. `server/store.js`'teki doğrulama kuralları
+`js/data.js`'tekilerle eşleşmek zorundadır (§15).*
