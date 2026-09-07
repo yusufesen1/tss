@@ -168,6 +168,7 @@ h2, h3{ margin: 0; font-weight: 700; }
    ========================================================= */
 .field-group{ display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .field-row{ display: grid; grid-template-columns: 1fr; gap: 12px; }
+.field-row-2{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .field-row-3{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field-row-4{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .field-actions{ justify-content: flex-end; }
@@ -487,6 +488,19 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   border-radius: var(--r-input);
 }
 
+/* Onay modalında, notu görmeden önce toplam tahmini yakıt maliyetinin
+   özeti — bir uyarı değil, bilgilendirme; nötr renk. */
+.fuel-approve-summary{
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--n-700);
+  background: var(--n-50);
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+}
+
 /* =========================================================
    Araç grupları (çoklu araç planı) — her araç kendi başlık + KPI +
    tablosuyla alt alta listelenir. #planGroups, panel içindeki tek
@@ -542,7 +556,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 .summary{
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--n-200);

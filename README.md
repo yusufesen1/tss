@@ -32,8 +32,12 @@ tss-rota-panel/
 4. Gerekirse: durak sırasını sürükle-bırakla değiştir, palet/durak süresini satırdan
    elle düzenle, ya da bir gruba atanan aracı üstteki "Araç" seçiminden değiştir —
    hepsi rota onaylanmadan önce yapılabilir.
-5. **Excel** (araç başına ayrı sayfa) veya **PDF** (harita + araç başına ayrı
-   KPI/tablo bölümü) olarak dışa aktar.
+5. Her araç kartında **tahmini yakıt maliyeti** gösterilir (dönüş yolu dahil); "Rotayı
+   Onayla" butonuna basıldığında notu yazmadan önce filo genelinde toplam tahmini
+   maliyet de görünür. TL/L fiyatı ulusal ortalamadan otomatik çekilir (bkz. aşağı),
+   Trafik Ayarları > Yakıt bölümünden elle de girilebilir/güncellenebilir.
+6. **Excel** (araç başına ayrı sayfa) veya **PDF** (harita + araç başına ayrı
+   KPI/tablo bölümü) olarak dışa aktar — ikisi de yakıt maliyetini içerir.
 
 Lokasyon ve araç listeleri üst menüden yönetilir; ayrı Excel dosyalarından içe aktarılabilir.
 Haritaya sağ tıklamak yeni lokasyon formunu koordinatlarla doldurur.
@@ -66,9 +70,27 @@ karar veriyor, sonra her grup için optimizer'ı ayrı ayrı çağırıyor.
 ## Excel sütun başlıkları
 
 - **Lokasyon:** `ad`, `enlem`, `boylam`, `acilis`, `kapanis`
-- **Araç:** `plaka`, `model`, `kapasite`
+- **Araç:** `plaka`, `model`, `kapasite`, `yakit tuketimi` (ops., L/100km), `yakit tipi` (ops., dizel/benzin)
 
 Türkçe/İngilizce ve büyük-küçük harf farkları tolere edilir.
+
+## Yakıt maliyeti
+
+Her araç kartında ve dışa aktarımlarda gösterilen tahmini yakıt maliyeti, araç
+başına L/100km cinsinden tüketim × rota mesafesi (dönüş dahil) × TL/L fiyatı
+olarak hesaplanır:
+
+- **Tüketim:** Araçlar modalından her araç için elle girilir/düzenlenir; yeni
+  eklenen Fiat Ducato/Peugeot Partner gibi araçlar üreticinin karma çevrim
+  ortalamasına yakın bir varsayılanla gelir — gerçek filo verisi (yakıt fişi)
+  girildikçe güncellenmesi önerilir.
+- **Fiyat:** Türkiye'deki ücretsiz akaryakıt fiyat servisleri tarayıcıdan CORS
+  nedeniyle doğrudan çağrılamadığından, bu projenin GitHub reposunda
+  zamanlanmış bir GitHub Actions iş akışı (`.github/workflows/fuel-price.yml`)
+  günde birkaç kez ulusal ortalama motorin/benzin fiyatını çekip
+  `data/fuel-price.json`'a yazar; panel bu dosyayı okur. Trafik Ayarları >
+  Yakıt bölümünden elle bir TL/L fiyatı girilirse o her zaman önceliklidir.
+  Detaylar için bkz. TEKNIK-DOKUMAN.md §10.4.
 
 ## Algoritma
 
@@ -88,6 +110,11 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
 - **Kümeleme sezgiseldir, kesin optimum garanti etmez:** çoklu araç gerektiğinde duraklar en yakın nokta tohumlamasıyla kümelenir (bkz. Araç Ataması) — küçük durak sayılarında iyi sonuç verir, çok sayıda dağınık durakta teorik en iyi bölüştürme olmayabilir.
 - **Başlangıç Yükü tek bir araca aittir:** birden fazla araç gerektiğinde bu yük, başlangıç noktasına en yakın kümeye atanan araca eklenir.
 - **Trafik verisi yok:** süreler sabit hız varsayımıyla hesaplanır.
+- **Yakıt fiyatı otomatik güncellemesi GitHub Actions'a bağlı:** repo bir
+  GitHub uzak sunucusuna bağlı değilse ya da Actions çalışmıyorsa otomatik
+  fiyat gelmez, kullanıcı Trafik Ayarları > Yakıt'tan elle girer (bkz. yukarı).
+- **Yakıt tüketimi varsayılanları tahminidir:** gerçek filo verisiyle
+  (yakıt fişi/depo kaydı) güncellenmedikçe yakıt maliyeti kaba bir tahmindir.
 - PDF'e harita gömme tarayıcı güvenlik kısıtlarına takılırsa rapor tablo ile üretilir ve durum PDF üzerinde belirtilir.
 
 ## Devam edecek geliştiriciler için

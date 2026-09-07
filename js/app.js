@@ -11,6 +11,7 @@
   var Exp = window.TSSExporter;
   var Weather = window.TSSWeather;
   var TomTom = window.TSSTomTom; // yoksa (tomtom.js yüklenmediyse) undefined kalır, aşağıda kontrol edilir
+  var FuelPrice = window.TSSFuelPrice;
 
   var map, routeLayer, markerLayer;
   var toastTimer = null;
@@ -22,6 +23,11 @@
   // OSRM isteği atmadan) hesaplayabilsin diye. planRoute() başarıyla matrix
   // aldığında set edilir, clearPlan()'da temizlenir.
   var lastPlanningContext = null;
+  // js/fuelprice.js'ten (varsa) çekilen ulusal ortalama TL/L fiyatı — sadece
+  // bu oturumda, bellekte tutulur (kalıcı değil). Kullanıcının Trafik
+  // Ayarları > Yakıt bölümünden ELLE girdiği fiyat (D.getFuelPriceSettings())
+  // her zaman bunun önüne geçer, bkz. effectiveFuelPrice().
+  var autoFuelPrice = null;
   // Sefer Geçmişi filtre paneli — modal her açıldığında sıfırlanmaz, sekme
   // içinde kalıcıdır (kullanıcı modalı kapatıp tekrar açsa filtre durur).
   var historyFilter = {
@@ -152,7 +158,8 @@
     duration: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>',
     road: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 6.5 21"/><path d="M15 3l2.5 18"/><path d="M12 4v3M12 10v3M12 16v3"/></svg>',
     flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V3"/><path d="M6 4h12l-3 3.5L18 11H6"/></svg>',
-    truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h10v9H3z"/><path d="M13 11h4l3 3v2h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17" cy="18.5" r="1.6"/></svg>'
+    truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h10v9H3z"/><path d="M13 11h4l3 3v2h-7"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17" cy="18.5" r="1.6"/></svg>',
+    fuel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M4 11h10"/><path d="M16 8.5l2.6 2.1a1.6 1.6 0 0 1 .6 1.25V17a1.5 1.5 0 0 0 3 0v-5.5l-2.5-2.5"/><path d="M2.5 21h13"/></svg>'
   };
   function groupColor(index) { return GROUP_COLORS[index % GROUP_COLORS.length]; }
 
@@ -977,6 +984,82 @@
     });
   }
 
+  /* ---------------------------------------------------------
+     Yakıt maliyeti tahmini
+     ---------------------------------------------------------
+     data.js dış fiyat/tüketim mantığından habersiz kalıyor (bkz. data.js
+     yorumları); bu katman kullanıcının elle girdiği fiyatı, otomatik
+     çekileni ve araç başına tüketimi birleştirip TL rakamına çeviriyor. */
+
+  // Öncelik: kullanıcının Trafik Ayarları > Yakıt'tan elle girdiği fiyat →
+  // js/fuelprice.js'in otomatik çektiği ulusal ortalama → bilinmiyor (null).
+  // null döndüğünde formatFuelCost() bunu "fiyat girilmedi" olarak gösterir,
+  // asla sıfır/yanlış bir rakam uydurmaz.
+  function effectiveFuelPrice(fuelType) {
+    var manual = D.getFuelPriceSettings();
+    if (fuelType === 'benzin') {
+      if (manual && manual.benzinPrice) return manual.benzinPrice;
+      if (autoFuelPrice && autoFuelPrice.benzin) return autoFuelPrice.benzin;
+      return null;
+    }
+    if (manual && manual.dizelPrice) return manual.dizelPrice;
+    if (autoFuelPrice && autoFuelPrice.dizel) return autoFuelPrice.dizel;
+    return null;
+  }
+
+  // fleet.js HER ZAMAN returnToStart:false ile çalışır (bkz. TEKNIK-DOKUMAN
+  // §8, §7.1) — yani group.result.distance depoya DÖNÜŞ bacağını içermez.
+  // Yakıt maliyeti aracın gerçekte kat edeceği toplam mesafeye (gidiş +
+  // dönüş) göre hesaplanmak istendiğinden bu fark burada ayrıca ekleniyor.
+  // group.order / group.localDistances, js/fleet.js → buildGroup()
+  // tarafından her grup nesnesinde zaten saklanıyor (local index 0 = depo).
+  function returnLegMeters(group) {
+    var order = group.order;
+    if (!order || !order.length || !group.localDistances) return 0;
+    var lastLocal = order[order.length - 1];
+    var leg = group.localDistances[lastLocal] && group.localDistances[lastLocal][0];
+    return isFinite(leg) ? leg : 0;
+  }
+
+  function fuelCostForGroup(group) {
+    var totalMeters = group.result.distance + returnLegMeters(group);
+    var totalKm = totalMeters / 1000;
+    var consumption = Number(group.vehicle.fuelConsumption) || 7;
+    var price = effectiveFuelPrice(group.vehicle.fuelType);
+    var liters = totalKm * consumption / 100;
+    return { km: totalKm, liters: liters, price: price, value: price != null ? liters * price : null };
+  }
+
+  function formatTL(value) {
+    return '₺' + value.toLocaleString('tr-TR', { maximumFractionDigits: 0 });
+  }
+
+  function formatFuelCost(fc) {
+    if (fc.value == null) return 'Fiyat girilmedi';
+    return formatTL(fc.value) + ' (' + fc.km.toFixed(1) + ' km, dönüş dahil)';
+  }
+
+  // Onay modalı açıldığında (notu yazmadan önce) filo genelinde tahmini
+  // toplam yakıt maliyetini gösterir — kullanıcının onaylamadan önce
+  // görmek istediği tam da bu (bkz. görüşme).
+  function renderApproveFuelSummary(plan) {
+    var box = $('approveFuelSummary');
+    if (!box) return;
+    var total = 0, missing = 0;
+    plan.groups.forEach(function (g) {
+      if (g.meta && typeof g.meta.fuelCostValue === 'number') total += g.meta.fuelCostValue;
+      else missing++;
+    });
+    if (missing === plan.groups.length) {
+      box.textContent = 'Tahmini yakıt maliyeti hesaplanamadı — Trafik Ayarları > Yakıt bölümünden güncel TL/L fiyatını girin.';
+    } else {
+      box.textContent = 'Toplam tahmini yakıt maliyeti: ' + formatTL(total) +
+        ' (dönüş yolu dahil, ' + plan.groups.length + ' araç)' +
+        (missing ? ' — ' + missing + ' araç için fiyat eksik olduğundan bu toplam düşük çıkıyor olabilir.' : '.');
+    }
+    box.hidden = false;
+  }
+
   function netDriveSeconds(result) {
     var serviceTotal = result.rows.reduce(function (sum, row) {
       if (row.kind !== 'pickup' && row.kind !== 'delivery') return sum;
@@ -986,12 +1069,15 @@
   }
 
   function buildGroupMeta(group) {
+    var fc = fuelCostForGroup(group);
     return {
       distance: km(group.result.distance) + ' km',
       duration: durationLabel(group.result.totalSeconds),
       driveDuration: durationLabel(netDriveSeconds(group.result)),
       finish: Opt.secondsToTime(group.result.finishSec),
-      departure: el.inpDeparture.value
+      departure: el.inpDeparture.value,
+      fuelCost: formatFuelCost(fc),
+      fuelCostValue: fc.value
     };
   }
 
@@ -1251,6 +1337,7 @@
     summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration, 'duration'));
     summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration, 'road'));
     summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish, 'flag'));
+    summary.appendChild(buildSummaryCard('Yakıt Maliyeti', group.meta.fuelCost, 'fuel'));
     wrap.appendChild(summary);
 
     var tableWrap = document.createElement('div');
@@ -1664,6 +1751,31 @@
         tdUsable.textContent = veh.usable;
         tr.appendChild(tdUsable);
 
+        var tdFuelConsumption = document.createElement('td');
+        tdFuelConsumption.className = 'center';
+        var inpFuelConsumption = document.createElement('input');
+        inpFuelConsumption.type = 'number';
+        inpFuelConsumption.className = 'input input-sm';
+        inpFuelConsumption.min = 0.1;
+        inpFuelConsumption.step = 0.1;
+        inpFuelConsumption.value = veh.fuelConsumption;
+        tdFuelConsumption.appendChild(inpFuelConsumption);
+        tr.appendChild(tdFuelConsumption);
+
+        var tdFuelType = document.createElement('td');
+        tdFuelType.className = 'center';
+        var selFuelType = document.createElement('select');
+        selFuelType.className = 'input input-sm';
+        ['dizel', 'benzin'].forEach(function (ft) {
+          var opt = document.createElement('option');
+          opt.value = ft;
+          opt.textContent = ft === 'dizel' ? 'Dizel' : 'Benzin';
+          selFuelType.appendChild(opt);
+        });
+        selFuelType.value = veh.fuelType;
+        tdFuelType.appendChild(selFuelType);
+        tr.appendChild(tdFuelType);
+
         var tdAction = document.createElement('td');
         tdAction.className = 'center';
         var btnSave = document.createElement('button');
@@ -1674,7 +1786,9 @@
             D.updateVehicle(veh.id, {
               plate: inpPlate.value,
               model: inpModel.value,
-              capacity: inpCapacity.value
+              capacity: inpCapacity.value,
+              fuelConsumption: inpFuelConsumption.value,
+              fuelType: selFuelType.value
             });
             editingVehicleId = null;
             renderVehicleTable();
@@ -1695,7 +1809,7 @@
         tdAction.appendChild(btnCancel);
         tr.appendChild(tdAction);
 
-        [inpPlate, inpModel, inpCapacity].forEach(function (inp) {
+        [inpPlate, inpModel, inpCapacity, inpFuelConsumption].forEach(function (inp) {
           inp.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); btnSave.click(); }
             else if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); }
@@ -1728,6 +1842,16 @@
       });
       tdUsable.appendChild(input);
       tr.appendChild(tdUsable);
+
+      var tdFuelConsumption = document.createElement('td');
+      tdFuelConsumption.className = 'center';
+      tdFuelConsumption.textContent = veh.fuelConsumption;
+      tr.appendChild(tdFuelConsumption);
+
+      var tdFuelType = document.createElement('td');
+      tdFuelType.className = 'center';
+      tdFuelType.textContent = veh.fuelType === 'benzin' ? 'Benzin' : 'Dizel';
+      tr.appendChild(tdFuelType);
 
       var tdAction = document.createElement('td');
       tdAction.className = 'center';
@@ -1851,6 +1975,7 @@
       appendTextCell(tr, h.stopCount, 'center');
       appendTextCell(tr, h.distance, 'num');
       appendTextCell(tr, h.duration, 'num');
+      appendTextCell(tr, typeof h.fuelCost === 'number' ? formatTL(h.fuelCost) : '—', 'num');
 
       var tdAction = document.createElement('td');
       tdAction.className = 'center';
@@ -1890,6 +2015,37 @@
     $('trafficNightEnd').value = t.night.end;
     $('trafficNightFactor').value = t.night.factor;
     $('inpTomTomKey').value = D.getTomTomApiKey();
+
+    var fuel = D.getFuelPriceSettings();
+    $('inpFuelDizel').value = fuel.dizelPrice != null ? fuel.dizelPrice : '';
+    $('inpFuelBenzin').value = fuel.benzinPrice != null ? fuel.benzinPrice : '';
+    renderFuelAutoHint();
+  }
+
+  // Trafik Ayarları > Yakıt bölümündeki, otomatik çekilen değeri gösteren
+  // bilgi metni — elle bir fiyat girilmişse otomatik değer sadece referans
+  // olarak görünür (elle girilen her zaman öncelikli, bkz. effectiveFuelPrice).
+  function renderFuelAutoHint() {
+    var hint = $('fuelAutoHint');
+    if (!hint) return;
+    if (autoFuelPrice && (autoFuelPrice.dizel || autoFuelPrice.benzin)) {
+      var dateLabel = autoFuelPrice.updatedAt ? formatDateTime(new Date(autoFuelPrice.updatedAt).getTime()) : 'bilinmiyor';
+      hint.textContent = 'Otomatik: Motorin ' + (autoFuelPrice.dizel ? formatTL(autoFuelPrice.dizel) : '—') +
+        ' · Benzin ' + (autoFuelPrice.benzin ? formatTL(autoFuelPrice.benzin) : '—') +
+        ' (güncelleme: ' + dateLabel + ', kaynak: ' + (autoFuelPrice.source || 'GitHub Actions') + '). ' +
+        'Yukarıya bir değer girerseniz elle girilen kullanılır, boş bırakırsanız bu otomatik değere düşülür.';
+    } else {
+      hint.textContent = 'Otomatik fiyat şu an alınamadı (internet yok, GitHub reposu henüz kurulmadı ya da ilk çalıştırma bekleniyor) — güncel TL/L fiyatını yukarıya elle girin.';
+    }
+  }
+
+  // Yakıt fiyatı (elle ya da otomatik) değiştiğinde, ekranda zaten açık bir
+  // plan varsa araç kartlarındaki/onay özetindeki rakamları yeniden hesaplar
+  // — kullanıcı yeniden "Rotayı Planla"ya basmak zorunda kalmasın diye.
+  function refreshPlanFuelMeta() {
+    if (!D.state.plan) return;
+    D.state.plan.groups.forEach(function (group) { group.meta = buildGroupMeta(group); });
+    renderPlanGroups(D.state.plan);
   }
 
   function bindTrafficField(id, band, key) {
@@ -2040,6 +2196,25 @@
       D.setTomTomApiKey($('inpTomTomKey').value);
     });
 
+    $('inpFuelDizel').addEventListener('change', function () {
+      D.updateFuelPriceSettings({ dizelPrice: $('inpFuelDizel').value });
+      renderFuelAutoHint();
+      refreshPlanFuelMeta();
+    });
+    $('inpFuelBenzin').addEventListener('change', function () {
+      D.updateFuelPriceSettings({ benzinPrice: $('inpFuelBenzin').value });
+      renderFuelAutoHint();
+      refreshPlanFuelMeta();
+    });
+    $('btnFuelUseAuto').addEventListener('click', function () {
+      D.updateFuelPriceSettings({ dizelPrice: null, benzinPrice: null });
+      $('inpFuelDizel').value = '';
+      $('inpFuelBenzin').value = '';
+      renderFuelAutoHint();
+      refreshPlanFuelMeta();
+      toast('Elle girilen yakıt fiyatı temizlendi, otomatik değer kullanılacak.', 'success');
+    });
+
     document.querySelectorAll('[data-close-modal]').forEach(function (btn) {
       btn.addEventListener('click', function () { closeModal(btn.dataset.closeModal); });
     });
@@ -2084,9 +2259,12 @@
         D.addVehicle({
           plate: $('vehPlate').value,
           model: $('vehModel').value,
-          capacity: $('vehCapacity').value
+          capacity: $('vehCapacity').value,
+          fuelConsumption: $('vehFuelConsumption').value,
+          fuelType: $('vehFuelType').value
         });
         $('vehPlate').value = ''; $('vehModel').value = ''; $('vehCapacity').value = '';
+        $('vehFuelConsumption').value = ''; $('vehFuelType').value = 'dizel';
         renderVehicleTable();
         refreshSelects();
         toast('Araç eklendi.', 'success');
@@ -2125,6 +2303,7 @@
     el.btnApproveRoute.addEventListener('click', function () {
       if (!D.state.plan) return;
       $('inpApproveNote').value = D.state.plan.note || '';
+      renderApproveFuelSummary(D.state.plan);
       openModal('modalApprove');
     });
 
@@ -2229,6 +2408,16 @@
     } catch (err) {
       showStartupError('Arayüz başlatılamadı: ' + err.message);
       return;
+    }
+
+    // Otomatik yakıt fiyatı: en iyi çaba, arka planda — hiçbir şeyi
+    // bloke etmez, başarısız olursa kullanıcı elle girer (bkz. fuelprice.js).
+    if (FuelPrice) {
+      FuelPrice.fetchNational().then(function (data) {
+        autoFuelPrice = data;
+        renderFuelAutoHint();
+        refreshPlanFuelMeta();
+      });
     }
 
     try {

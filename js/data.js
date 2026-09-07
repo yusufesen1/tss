@@ -16,12 +16,19 @@
     { id: 'loc-6', name: 'THY Genel Müdürlük',      lat: 40.982539, lng: 28.825014, from: '00:00', until: '23:59' }
   ];
 
+  // fuelConsumption (L/100km): üreticinin karma çevrim (combined cycle)
+  // ortalaması — gerçek filo verisi (yakıt fişi/depo kaydı) girilene kadar
+  // kaba bir başlangıç noktası, araç bazında elle düzenlenebilir (bkz.
+  // updateVehicle). Yüklü/şehir içi kullanımda bu rakamların üzerine
+  // çıkılması normaldir, bkz. TEKNIK-DOKUMAN §10.4.
+  var DEFAULT_FUEL_CONSUMPTION = 7; // hiç girilmemiş/bozuk bir kayıt için son çare varsayılan
+
   // --- Varsayılan araçlar (paylaşılan araç listesi) ---
   var DEFAULT_VEHICLES = [
-    { id: 'veh-1', plate: '34 HER 841', model: 'Fiat Ducato',     capacity: 5, usable: 5 },
-    { id: 'veh-2', plate: '34 KVS 889', model: 'Fiat Ducato',     capacity: 5, usable: 5 },
-    { id: 'veh-3', plate: '34 GTS 710', model: 'Peugeot Partner', capacity: 1, usable: 1 },
-    { id: 'veh-4', plate: '34 GTS 744', model: 'Peugeot Partner', capacity: 1, usable: 1 }
+    { id: 'veh-1', plate: '34 HER 841', model: 'Fiat Ducato',     capacity: 5, usable: 5, fuelConsumption: 7,   fuelType: 'dizel' },
+    { id: 'veh-2', plate: '34 KVS 889', model: 'Fiat Ducato',     capacity: 5, usable: 5, fuelConsumption: 7,   fuelType: 'dizel' },
+    { id: 'veh-3', plate: '34 GTS 710', model: 'Peugeot Partner', capacity: 1, usable: 1, fuelConsumption: 5.8, fuelType: 'dizel' },
+    { id: 'veh-4', plate: '34 GTS 744', model: 'Peugeot Partner', capacity: 1, usable: 1, fuelConsumption: 5.8, fuelType: 'dizel' }
   ];
 
   // Gerçek trafik verisi yok (backend/API maliyeti nedeniyle) — gün içi zaman
@@ -34,6 +41,13 @@
     night:   { start: '23:00', end: '06:00', factor: 1.0 }
   };
 
+  // Kullanıcının Trafik Ayarları > Yakıt bölümünden ELLE girdiği TL/L
+  // fiyatı — boşsa (null) js/fuelprice.js'in otomatik çektiği (ya da hiçbir
+  // şey çekemediyse) değer kullanılır, karar app.js'te verilir (bkz.
+  // effectiveFuelPrice). data.js kasıtlı olarak dış servisten habersiz
+  // kalıyor, sadece kullanıcının override'ını saklar.
+  var DEFAULT_FUEL_PRICE = { dizelPrice: null, benzinPrice: null };
+
   var state = {
     locations: [],
     vehicles: [],
@@ -41,8 +55,9 @@
     plan: null,         // hesaplanan rota sonucu
     history: [],        // onaylanan seferlerin kalıcı kaydı
     traffic: null,       // trafik katsayısı ayarları (kalıcı)
-    tomtomApiKey: ''     // "En Az Süre" modunda canlı trafik için — kullanıcı girer,
+    tomtomApiKey: '',    // "En Az Süre" modunda canlı trafik için — kullanıcı girer,
                           // sadece bu tarayıcıda saklanır, koda hiç gömülmez
+    fuel: null            // { dizelPrice, benzinPrice } — elle girilmiş yakıt fiyatı override'ı
   };
 
   function uid(prefix) {
@@ -56,7 +71,8 @@
         vehicles: state.vehicles,
         history: state.history,
         traffic: state.traffic,
-        tomtomApiKey: state.tomtomApiKey
+        tomtomApiKey: state.tomtomApiKey,
+        fuel: state.fuel
       }));
     } catch (e) {
       /* localStorage kapalıysa sessizce geç: uygulama yine çalışır */
@@ -80,12 +96,22 @@
     } else {
       state.vehicles = DEFAULT_VEHICLES.slice();
     }
+    // Geriye dönük uyumluluk: fuelConsumption/fuelType alanı sonradan
+    // eklendi (id alanının §5.1'de anlatılan hikâyesiyle aynı durum) —
+    // eski localStorage kayıtlarında bulunmayabilir, burada tamamlanır.
+    state.vehicles.forEach(function (v) {
+      var c = Number(v.fuelConsumption);
+      if (!isFinite(c) || c <= 0) v.fuelConsumption = DEFAULT_FUEL_CONSUMPTION;
+      if (v.fuelType !== 'benzin') v.fuelType = 'dizel';
+    });
 
     state.history = (stored && Array.isArray(stored.history)) ? stored.history : [];
 
     state.traffic = (stored && stored.traffic) ? stored.traffic : JSON.parse(JSON.stringify(DEFAULT_TRAFFIC));
 
     state.tomtomApiKey = (stored && typeof stored.tomtomApiKey === 'string') ? stored.tomtomApiKey : '';
+
+    state.fuel = (stored && stored.fuel) ? stored.fuel : JSON.parse(JSON.stringify(DEFAULT_FUEL_PRICE));
   }
 
   function resetToDefaults() {
@@ -126,6 +152,27 @@
   function setTomTomApiKey(key) {
     state.tomtomApiKey = String(key || '').trim();
     save();
+  }
+
+  // --- Yakıt fiyatı ayarları (elle override) ---
+  // Otomatik çekilen (js/fuelprice.js) değerin ÜZERİNE yazmak isteyen
+  // kullanıcı için: boş bırakılırsa (null) app.js otomatik/varsayılana
+  // düşer, bkz. app.js → effectiveFuelPrice().
+  function getFuelPriceSettings() {
+    return state.fuel;
+  }
+
+  function updateFuelPriceSettings(patch) {
+    function parsePrice(raw, current) {
+      if (raw === undefined) return current;
+      if (raw === '' || raw === null) return null; // elle temizlenmiş: otomatik değere dön
+      var n = Number(raw);
+      return (isFinite(n) && n > 0) ? n : current;
+    }
+    state.fuel.dizelPrice = parsePrice(patch.dizelPrice, state.fuel.dizelPrice);
+    state.fuel.benzinPrice = parsePrice(patch.benzinPrice, state.fuel.benzinPrice);
+    save();
+    return state.fuel;
   }
 
   // --- Lokasyon işlemleri ---
@@ -176,6 +223,18 @@
   }
 
   // --- Araç işlemleri ---
+  // fuelConsumption/fuelType boş ya da geçersiz gelirse sessizce varsayılana
+  // düşer (kapasite gibi sert bir zorunluluk değil — kullanıcı istediğinde
+  // Araçlar tablosundan "Düzenle" ile daha isabetli bir değere günceller).
+  function normalizeFuelConsumption(raw) {
+    var n = Number(raw);
+    return (isFinite(n) && n > 0) ? n : DEFAULT_FUEL_CONSUMPTION;
+  }
+
+  function normalizeFuelType(raw) {
+    return String(raw || '').trim().toLowerCase() === 'benzin' ? 'benzin' : 'dizel';
+  }
+
   function addVehicle(data) {
     var cap = Number(data.capacity);
     if (!String(data.plate || '').trim()) throw new Error('Plaka boş olamaz.');
@@ -185,7 +244,9 @@
       plate: String(data.plate).trim().toUpperCase(),
       model: String(data.model || '').trim(),
       capacity: Math.floor(cap),
-      usable: Math.floor(cap)
+      usable: Math.floor(cap),
+      fuelConsumption: normalizeFuelConsumption(data.fuelConsumption),
+      fuelType: normalizeFuelType(data.fuelType)
     };
     state.vehicles.push(veh);
     save();
@@ -222,6 +283,8 @@
     veh.model = String(data.model || '').trim();
     veh.capacity = Math.floor(cap);
     veh.usable = Math.max(1, Math.min(veh.capacity, veh.usable));
+    if (data.fuelConsumption !== undefined) veh.fuelConsumption = normalizeFuelConsumption(data.fuelConsumption);
+    if (data.fuelType !== undefined) veh.fuelType = normalizeFuelType(data.fuelType);
     save();
     return veh;
   }
@@ -289,6 +352,11 @@
         vehicleModel: g.vehicle.model || '',
         distance: g.meta.distance,
         duration: g.meta.duration,
+        // g.meta.fuelCostValue app.js → buildGroupMeta()'da hesaplanır (bu
+        // dosya dış fiyat/tüketim mantığından habersiz kalır, sadece onay
+        // anındaki hazır rakamı geçmişe anlık görüntü olarak kaydeder —
+        // fiyat sonradan değişse bile geçmişteki sefer o günkü tahminiyle kalır).
+        fuelCost: (g.meta && typeof g.meta.fuelCostValue === 'number') ? g.meta.fuelCostValue : null,
         stopCount: g.tableRows.filter(function (r) {
           return r.kind === 'pickup' || r.kind === 'delivery';
         }).length,
@@ -305,6 +373,14 @@
     var latestFinishSec = Math.max.apply(null, plan.groups.map(function (g) { return g.result.finishSec; }));
     var departureSec = Opt().timeToSeconds(plan.groups[0].meta.departure);
 
+    // En az bir grup için fiyat bilinmiyorsa (kullanıcı hiç TL/L girmemiş ve
+    // otomatik değer de gelmemişse) toplam eksik/yanıltıcı olur — bu yüzden
+    // "bilinmiyor" durumunu ayrıca işaretliyoruz (bkz. formatDuration üstü).
+    var anyFuelCostMissing = plan.groups.some(function (g) { return !g.meta || typeof g.meta.fuelCostValue !== 'number'; });
+    var totalFuelCost = plan.groups.reduce(function (sum, g) {
+      return sum + ((g.meta && typeof g.meta.fuelCostValue === 'number') ? g.meta.fuelCostValue : 0);
+    }, 0);
+
     var entry = {
       id: uid('trip'),
       approvedAt: Date.now(),
@@ -318,6 +394,7 @@
       departure: plan.groups[0].meta.departure,
       distance: (totalDistanceMeters / 1000).toFixed(1) + ' km',
       duration: formatDuration(latestFinishSec - departureSec),
+      fuelCost: anyFuelCostMissing && totalFuelCost === 0 ? null : totalFuelCost,
       stopCount: groups.reduce(function (sum, g) { return sum + g.stopCount; }, 0),
       groups: groups
     };
@@ -442,13 +519,17 @@
       var plate = pick(row, ['plaka', 'plate', 'arac', 'aracplakasi']);
       var model = pick(row, ['model', 'marka', 'aracmodeli', 'tip']);
       var capacity = pick(row, ['kapasite', 'paletkapasitesi', 'palet', 'capacity']);
+      var fuelConsumption = pick(row, ['yakittuketimi', 'tuketim', 'l100km', 'fuelconsumption', 'litre100km']);
+      var fuelType = pick(row, ['yakittipi', 'yakit', 'fueltype', 'fuel']);
 
       if (!plate || capacity === null) { skipped++; return; }
       try {
         addVehicle({
           plate: plate,
           model: model || '',
-          capacity: String(capacity).replace(/[^0-9.]/g, '')
+          capacity: String(capacity).replace(/[^0-9.]/g, ''),
+          fuelConsumption: fuelConsumption !== null ? String(fuelConsumption).replace(',', '.').replace(/[^0-9.]/g, '') : undefined,
+          fuelType: fuelType !== null ? fuelType : undefined
         });
         added++;
       } catch (e) { skipped++; }
@@ -466,6 +547,8 @@
     updateTrafficSettings: updateTrafficSettings,
     getTomTomApiKey: getTomTomApiKey,
     setTomTomApiKey: setTomTomApiKey,
+    getFuelPriceSettings: getFuelPriceSettings,
+    updateFuelPriceSettings: updateFuelPriceSettings,
     addLocation: addLocation,
     removeLocation: removeLocation,
     updateLocation: updateLocation,

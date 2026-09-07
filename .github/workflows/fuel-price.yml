@@ -1,0 +1,56 @@
+name: Yakıt fiyatını güncelle
+
+# UcuzYakıtBul'un ücretsiz /api/prices/national uç noktası tarayıcıdan CORS
+# nedeniyle çağrılamıyor (bkz. js/fuelprice.js başındaki not, TEKNIK-DOKUMAN
+# §10.4). Bu iş akışı o isteği SUNUCU TARAFINDAN (GitHub'ın runner'ından,
+# CORS derdi olmadan) atıp sonucu data/fuel-price.json'a yazar; panel bu
+# statik dosyayı raw.githubusercontent.com üzerinden okur (o adres CORS'a
+# açık). Kaynak veri günde bir kez güncellendiği için 6 saatlik bir döngü
+# pratikte gerçek zamanlı kadar güncel kalır.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update-fuel-price:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ulusal akaryakıt fiyatını çek ve data/fuel-price.json'a yaz
+        run: |
+          set -e
+          if ! curl -sf "https://ucuzyakitbul.com.tr/api/prices/national" -o /tmp/raw.json; then
+            echo "Kaynak servise ulaşılamadı, bu çalıştırma atlanıyor (dosya değişmeden kalır)."
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const raw = JSON.parse(fs.readFileSync("/tmp/raw.json", "utf8"));
+            const prices = raw.prices || [];
+            function find(type) {
+              const row = prices.find(function (p) { return String(p.fuelType || "").toLowerCase() === type; });
+              return row && typeof row.price === "number" ? row.price : null;
+            }
+            const out = {
+              motorin: find("motorin"),
+              benzin: find("benzin"),
+              updatedAt: new Date().toISOString(),
+              source: "UcuzYakıtBul (ulusal ortalama, https://ucuzyakitbul.com.tr) — .github/workflows/fuel-price.yml tarafından otomatik güncellenir"
+            };
+            fs.mkdirSync("data", { recursive: true });
+            fs.writeFileSync("data/fuel-price.json", JSON.stringify(out, null, 2) + "\n");
+          '
+
+      - name: Değişiklik varsa commit'le ve gönder
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/fuel-price.json
+          git diff --cached --quiet || git commit -m "chore: yakıt fiyatını güncelle"
+          git push

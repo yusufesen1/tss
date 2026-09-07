@@ -247,6 +247,19 @@
             <input type="number" id="vehCapacity" class="input input-sm" min="1" step="1" placeholder="5" />
           </div>
         </div>
+        <div class="field-row field-row-2">
+          <div class="field-group">
+            <label class="label label-sm" for="vehFuelConsumption">Yakıt Tüketimi (L/100km)</label>
+            <input type="number" id="vehFuelConsumption" class="input input-sm" min="0.1" step="0.1" placeholder="7" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="vehFuelType">Yakıt Tipi</label>
+            <select id="vehFuelType" class="input input-sm">
+              <option value="dizel">Dizel</option>
+              <option value="benzin">Benzin</option>
+            </select>
+          </div>
+        </div>
         <button class="btn btn-primary" id="btnAddVehicle">Araç Ekle</button>
       </div>
 
@@ -255,19 +268,21 @@
           Excel'den içe aktar
           <input type="file" id="fileVehicles" accept=".xlsx,.xls,.csv" hidden />
         </label>
-        <span class="hint">Beklenen Sütunlar: Plaka · Model · Kapasite</span>
+        <span class="hint">Beklenen Sütunlar: Plaka · Model · Kapasite · Yakıt Tüketimi (ops.) · Yakıt Tipi (ops.)</span>
       </div>
 
       <table class="data-table vehicle-table">
         <colgroup>
-          <col style="width:16%">
-          <col style="width:26%">
-          <col style="width:12%">
+          <col style="width:13%">
           <col style="width:20%">
-          <col style="width:26%">
+          <col style="width:9%">
+          <col style="width:12%">
+          <col style="width:13%">
+          <col style="width:11%">
+          <col style="width:22%">
         </colgroup>
         <thead>
-          <tr><th>Plaka</th><th>Model</th><th class="center">Kapasite</th><th class="center">Kullanılabilir</th><th class="center">İşlem</th></tr>
+          <tr><th>Plaka</th><th>Model</th><th class="center">Kapasite</th><th class="center">Kullanılabilir</th><th class="center">Tüketim (L/100km)</th><th class="center">Yakıt</th><th class="center">İşlem</th></tr>
         </thead>
         <tbody id="vehicleTableBody"></tbody>
       </table>
@@ -330,11 +345,12 @@
 
       <table class="data-table history-table">
         <colgroup>
-          <col style="width:18%">
           <col style="width:16%">
-          <col style="width:22%">
-          <col style="width:10%">
-          <col style="width:10%">
+          <col style="width:14%">
+          <col style="width:20%">
+          <col style="width:8%">
+          <col style="width:9%">
+          <col style="width:9%">
           <col style="width:12%">
           <col style="width:12%">
         </colgroup>
@@ -346,6 +362,7 @@
             <th class="center">Durak</th>
             <th class="num">Mesafe</th>
             <th class="num">Süre</th>
+            <th class="num">Yakıt Maliyeti</th>
             <th class="center">İşlem</th>
           </tr>
         </thead>
@@ -415,6 +432,24 @@
         <p class="hint">
         </p>
       </div>
+
+      <div class="form-card">
+        <div class="section-head">
+          <span class="label">Yakıt Fiyatı</span>
+        </div>
+        <div class="field-row field-row-2">
+          <div class="field-group">
+            <label class="label label-sm" for="inpFuelDizel">Motorin (TL/L)</label>
+            <input type="number" id="inpFuelDizel" class="input input-sm" min="0" step="0.01" placeholder="Otomatik" />
+          </div>
+          <div class="field-group">
+            <label class="label label-sm" for="inpFuelBenzin">Benzin (TL/L)</label>
+            <input type="number" id="inpFuelBenzin" class="input input-sm" min="0" step="0.01" placeholder="Otomatik" />
+          </div>
+        </div>
+        <p class="hint" id="fuelAutoHint"></p>
+        <button class="btn btn-neutral btn-sm" id="btnFuelUseAuto">Elle girileni temizle, otomatik değeri kullan</button>
+      </div>
     </div>
   </div>
 </div>
@@ -443,6 +478,7 @@
       <button class="btn btn-neutral btn-sm" data-close-modal="modalApprove">Kapat</button>
     </div>
     <div class="modal-body">
+      <p class="fuel-approve-summary" id="approveFuelSummary" hidden></p>
       <div class="field-group">
         <label class="label" for="inpApproveNote">Not (opsiyonel)</label>
         <textarea id="inpApproveNote" class="input" rows="4"
@@ -476,6 +512,7 @@
 <script src="js/osrm.js"></script>
 <script src="js/tomtom.js"></script>
 <script src="js/weather.js"></script>
+<script src="js/fuelprice.js"></script>
 <script src="js/optimizer.js"></script>
 <script src="js/fleet.js"></script>
 <script src="js/exporter.js"></script>

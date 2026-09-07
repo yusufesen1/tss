@@ -5,9 +5,13 @@
   'use strict';
 
   var HEADERS = ['#', 'Lokasyon', 'İşlem', 'Palet', 'Araçtaki yük', 'Mesafe (km)', 'Varış', 'Durak Süresi (dk)', 'Ayrılış', 'Durum'];
-  var HISTORY_HEADERS = ['Onay Tarihi', 'Araç(lar)', 'Başlangıç', 'Durak', 'Mesafe', 'Süre', 'Not'];
+  var HISTORY_HEADERS = ['Onay Tarihi', 'Araç(lar)', 'Başlangıç', 'Durak', 'Mesafe', 'Süre', 'Yakıt Maliyeti', 'Not'];
 
   function km(meters) { return (meters / 1000).toFixed(1); }
+
+  function formatTL(value) {
+    return typeof value === 'number' ? '₺' + value.toLocaleString('tr-TR', { maximumFractionDigits: 0 }) : '—';
+  }
 
   function formatVehicleList(vehicles) {
     return (vehicles || []).map(function (v) {
@@ -39,7 +43,7 @@
     return history.map(function (h) {
       return [
         formatHistoryDate(h.approvedAt), h.vehicleSummary || formatVehicleList(h.vehicles),
-        h.start, h.stopCount, h.distance, h.duration, h.note || '—'
+        h.start, h.stopCount, h.distance, h.duration, formatTL(h.fuelCost), h.note || '—'
       ];
     });
   }
@@ -189,7 +193,10 @@
     var book = XLSX.utils.book_new();
     var usedNames = {};
     plan.groups.forEach(function (group) {
-      var data = [HEADERS].concat(rowsToMatrix(group.tableRows));
+      // Tablo başlığından önce tek satırlık bir özet: mesafe/süre kartlarıyla
+      // aynı bilgiyi (bkz. #planGroups KPI kartları) Excel'e de taşır.
+      var fuelLine = group.meta ? ('Tahmini Yakıt Maliyeti (dönüş dahil): ' + group.meta.fuelCost) : '';
+      var data = [[fuelLine], [], HEADERS].concat(rowsToMatrix(group.tableRows));
       var sheet = XLSX.utils.aoa_to_sheet(data);
       sheet['!cols'] = [
         { wch: 5 }, { wch: 28 }, { wch: 12 }, { wch: 8 }, { wch: 13 },
@@ -209,7 +216,7 @@
 
     sheet['!cols'] = [
       { wch: 16 }, { wch: 26 }, { wch: 24 },
-      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 36 }
+      { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 36 }
     ];
 
     var book = XLSX.utils.book_new();
@@ -294,7 +301,8 @@
       columnStyles: {
         3: { halign: 'center' },
         4: { halign: 'right' },
-        5: { halign: 'right' }
+        5: { halign: 'right' },
+        6: { halign: 'right' }
       }
     });
 
@@ -316,6 +324,10 @@
     function setFont(style) { if (pdfFont) doc.setFont(pdfFont, style); }
 
     var totalDistanceMeters = plan.groups.reduce(function (s, g) { return s + g.result.distance; }, 0);
+    var totalFuelCost = plan.groups.reduce(function (s, g) {
+      return s + ((g.meta && typeof g.meta.fuelCostValue === 'number') ? g.meta.fuelCostValue : 0);
+    }, 0);
+    var anyFuelCostMissing = plan.groups.some(function (g) { return !g.meta || typeof g.meta.fuelCostValue !== 'number'; });
     var vehicleList = plan.groups.map(function (g) { return g.vehicle.plate; }).join(', ');
     var firstDeparture = plan.groups.length ? plan.groups[0].meta.departure : '';
 
@@ -332,7 +344,8 @@
     doc.setFontSize(9);
     var metaLine = plan.groups.length + ' araç: ' + vehicleList +
                    '  ·  Hareket: ' + plan.startLocation.name + ' ' + firstDeparture +
-                   '  ·  Toplam Mesafe: ' + km(totalDistanceMeters) + ' km';
+                   '  ·  Toplam Mesafe: ' + km(totalDistanceMeters) + ' km' +
+                   '  ·  Toplam Yakıt Maliyeti: ' + (anyFuelCostMissing && totalFuelCost === 0 ? '— (fiyat girilmedi)' : formatTL(totalFuelCost) + (anyFuelCostMissing ? ' (kısmi)' : ''));
     doc.text(doc.splitTextToSize(metaLine, pageWidth - margin * 2), margin, 25);
 
     // Onay sırasında girilen not (varsa) — köprü/tonaj/erişim kısıtı gibi
@@ -415,7 +428,8 @@
           doc.setFontSize(8);
           doc.setTextColor(100, 92, 88);
           var kpiLine = 'Mesafe: ' + group.meta.distance + '   ·   Süre: ' + group.meta.duration +
-                        '   ·   Yol Süresi: ' + group.meta.driveDuration + '   ·   Bitiş: ' + group.meta.finish;
+                        '   ·   Yol Süresi: ' + group.meta.driveDuration + '   ·   Bitiş: ' + group.meta.finish +
+                        '   ·   Yakıt: ' + group.meta.fuelCost;
           doc.text(kpiLine, margin, y + 5);
 
           doc.autoTable({

@@ -91,15 +91,16 @@ Kasıtlı olarak **backend'siz**: kurulum/deploy karmaşıklığı olmadan `inde
 bağımlılık yok; bağımlılık grafiği tek yönlü:
 
 ```
-data.js  (bağımsız — sadece kendi state'i)
+data.js  (bağımsız — sadece kendi state'i; dış fiyat/tüketim servislerinden habersiz, bkz. §10.4)
 osrm.js  (bağımsız)
 tomtom.js (bağımsız — sadece js/app.js tarafından, opsiyonel/best-effort çağrılır)
 weather.js (bağımsız)
+fuelprice.js (bağımsız — sadece js/app.js tarafından, opsiyonel/best-effort çağrılır, bkz. §10.4)
 optimizer.js (bağımsız — saf hesaplama, DOM'a hiç dokunmaz)
 fleet.js  → optimizer.js  (+ replayGroupWithLiveLegs: TomTom'un ürettiği bacak
                             verisini işler, ama TomTom'u kendisi hiç çağırmaz)
 exporter.js (bağımsız — sadece plan/history nesnesi alır)
-app.js    → data.js + osrm.js + tomtom.js + weather.js + optimizer.js + fleet.js + exporter.js
+app.js    → data.js + osrm.js + tomtom.js + weather.js + fuelprice.js + optimizer.js + fleet.js + exporter.js
 ```
 
 Bu ayrım bilinçli: **algoritma katmanı (`optimizer.js`, `fleet.js`) hiçbir
@@ -119,6 +120,7 @@ teorik olarak Node.js'te de (tarayıcı olmadan) test edilebilir/çalıştırıl
 | Rota/mesafe | [OSRM](https://project-osrm.org/) demo sunucusu (`router.project-osrm.org`) | `js/osrm.js` — internet bağımlılığı, bkz. §13. Sıralama kararının tek girdisi; her zaman çağrılır. |
 | Canlı trafik (opsiyonel) | [TomTom Routing API](https://developer.tomtom.com/routing-api) | `js/tomtom.js` — sadece "En Az Süre" modunda ve kullanıcı kendi API key'ini girdiyse çağrılır; ücretli/kotalı, anahtar gerektirir, bkz. §10.3 |
 | Hava durumu | [Open-Meteo](https://open-meteo.com/) API | Anahtar gerektirmez, ücretsiz — `js/weather.js` |
+| Yakıt fiyatı | `data/fuel-price.json` (bu repoda, `.github/workflows/fuel-price.yml` tarafından zamanlanmış olarak güncellenir) | Anahtar gerektirmez — `js/fuelprice.js`; kaynak akaryakıt servisi CORS'a kapalı olduğundan dolaylı yoldan okunur, bkz. §10.4 |
 | Excel içe/dışa aktarma | [SheetJS (xlsx.full.min.js)](vendor/xlsx.full.min.js) | `vendor/` altında yerel |
 | PDF üretimi | [jsPDF](vendor/jspdf.umd.min.js) + [jspdf-autotable](vendor/jspdf.plugin.autotable.min.js) | Tablo + serbest metin/şekil çizimi |
 | Harita → görüntü | [html2canvas](vendor/html2canvas.min.js) | PDF'e harita gömmek için ekran görüntüsü alır |
@@ -141,6 +143,7 @@ js/
   osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
   tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
+  fuelprice.js            data/fuel-price.json istemcisi (ulusal ortalama TL/L, bkz. §10.4)
   optimizer.js (367 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
   fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
   exporter.js (458 satır) Excel/PDF üretimi
@@ -156,6 +159,7 @@ vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 | `osrm.js` | `TSSOsrm` | `matrix(points)` → mesafe/süre matrisi, `route(points)` → çizim geometrisi |
 | `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination, apiKey)` → canlı trafik dahil tekil bacak süresi/mesafesi/güzergahı (bkz. §10.3) |
 | `weather.js` | `TSSWeather` | `checkPoints(points)` → uyarı listesi, `describePoint(...)` → tekil özet |
+| `fuelprice.js` | `TSSFuelPrice` | `fetchNational()` → `data/fuel-price.json`'dan ulusal ortalama motorin/benzin fiyatı (best-effort, bkz. §10.4) |
 | `optimizer.js` | `TSSOptimizer` | `optimize(options)` → tek araç için en iyi durak sırası + zaman çizelgesi; `costMetric` ile mesafe ya da süre minimize edilir |
 | `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği (filodaki hiçbir tek aracın kapasitesini aşan durakları birden fazla araca otomatik böler, bkz. §8.6); `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon; `replayGroupWithLiveLegs(...)` → TomTom'dan gelen canlı bacak verisiyle yeniden simülasyon |
 | `exporter.js` | `TSSExporter` | `toExcel`, `toPdf`, `toExcelHistory`, `toPdfHistory` |
@@ -170,14 +174,15 @@ vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 ```js
 state = {
   locations: [ { id, name, lat, lng, from, until } ],
-  vehicles:  [ { id, plate, model, capacity, usable } ],
+  vehicles:  [ { id, plate, model, capacity, usable, fuelConsumption, fuelType } ],
   stops:     [ { id, locationId, type: 'pickup'|'delivery', pallets } ],
   plan:      null | { startLocation, isWeekend, groups:[...], warning, note },
   history:   [ { id, approvedAt, note, vehicles, vehicleSummary, start,
                  departure, distance, duration, stopCount, groups } ],
   traffic:   { enabled, applyRushHourOnWeekends,
                morning:{start,end,factor}, evening:{...}, night:{...} },
-  tomtomApiKey: ''  // "En Az Süre" modunda canlı trafik için, bkz. §10.3
+  tomtomApiKey: '',  // "En Az Süre" modunda canlı trafik için, bkz. §10.3
+  fuel: { dizelPrice, benzinPrice }  // kullanıcının ELLE girdiği TL/L override'ı, bkz. §10.4
 }
 ```
 
@@ -188,6 +193,11 @@ Alan detayları:
   araç kısmen doluysa veya bakımda bir kısmı ayrılmışsa elle düşürülebilir,
   `setUsableCapacity()`). Tüm planlama/atama algoritmaları `usable`'ı esas alır,
   `capacity`'yi değil.
+- **`vehicles[].fuelConsumption` / `fuelType`** — yakıt maliyeti tahmini için
+  (bkz. §10.4): `fuelConsumption` L/100km cinsinden, `fuelType` `'dizel'` ya
+  da `'benzin'`. Eski kayıtlarda (`id` alanının yukarıdaki hikâyesiyle aynı
+  durum) bulunmayabilir — `data.js` → `load()` bunu varsayılana
+  (`DEFAULT_FUEL_CONSUMPTION = 7`, `'dizel'`) tamamlar.
 - **`stops[].type`** — `'pickup'` (yükleme, aracın yükünü artırır) veya
   `'delivery'` (boşaltma, azaltır). Sıralama algoritması hem mesafeyi hem bu
   yük değişimini simüle eder (bkz. §7).
@@ -213,8 +223,9 @@ Alan detayları:
 
 - Tek `localStorage` anahtarı: `tss-rota-panel-v1`.
 - `save()` şu alt kümeyi JSON'a çevirip yazar: `locations, vehicles, history,
-  traffic, tomtomApiKey` (`stops` ve `plan` KALICI DEĞİL — sayfa yenilenince
-  sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı olmamalı).
+  traffic, tomtomApiKey, fuel` (`stops` ve `plan` KALICI DEĞİL — sayfa
+  yenilenince sıfırlanır, bilinçli bir tasarım: "o anki taslak sefer" kalıcı
+  olmamalı).
 - `load()` her alanı ayrı ayrı, eksikse `DEFAULT_*` sabitlerine düşerek okur —
   kısmen bozuk/eksik bir kayıt bile uygulamayı kilitlemez.
 - `localStorage` erişimi başarısız olursa (`try/catch`) sessizce yutulur —
@@ -262,10 +273,14 @@ alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:369-377`).
    - Durak sırasını sürükle-bırak (`attachRowDragHandlers` → `reorderGroupRows`)
    - Palet miktarı / durak süresi satırdan elle değiştirme
    - Bir gruba atanan aracı üstteki seçimden değiştirme (`swapGroupVehicle`)
-5. **Onaylama**: not eklenip (köprü/tonaj kısıtı gibi OSRM'in bilmediği ama
+5. **Onaylama**: "Rotayı Onayla" butonu, notu yazmadan önce filo genelinde
+   **tahmini toplam yakıt maliyetini** gösterir (`renderApproveFuelSummary`,
+   bkz. §10.4) — kullanıcının onaylamadan önce görmek istediği asıl bilgi
+   bu. Ardından not eklenip (köprü/tonaj kısıtı gibi OSRM'in bilmediği ama
    sürücünün görmesi gereken uyarılar için) `TSSData.approveTrip(plan)`
-   çağrılır → sefer geçmişine kalıcı olarak düşer, kullanılan araçlar bir
-   sonraki planlamada rotasyon için işaretlenmiş olur (bkz. §8.3).
+   çağrılır → sefer geçmişine (yakıt maliyeti anlık görüntüsüyle birlikte)
+   kalıcı olarak düşer, kullanılan araçlar bir sonraki planlamada rotasyon
+   için işaretlenmiş olur (bkz. §8.3).
 6. **Dışa aktarma**: Excel (araç başına sayfa) veya PDF (harita görüntüsü +
    araç başına KPI/tablo bölümü).
 
@@ -807,6 +822,69 @@ sadece o tarayıcının `localStorage`'ında tutulur (bkz. §5), hiçbir dosyaya
 repoya gömülmez. Yine de TomTom panelinden key'e **domain kısıtlaması**
 eklenmesi önerilir (bkz. §12).
 
+### 10.4 Yakıt fiyatı (`fuelprice.js`) — GitHub Actions üzerinden otomatik, CORS engeli nedeniyle dolaylı
+
+Onaylamadan önce görülen **tahmini yakıt maliyeti** (bkz. §6, §8), araç
+başına `fuelConsumption` (L/100km) × rota mesafesi (dönüş dahil) × TL/L
+fiyatı olarak hesaplanır. Bu alt bölüm sadece **fiyatın** nereden geldiğini
+anlatıyor — tüketim/mesafe tarafı zaten var olan veri modeline (§5) ve
+`fleet.js`'in ürettiği rotaya (§8) dayanıyor.
+
+**Neden dolaylı bir yol izleniyor:** Türkiye'de ücretsiz/anahtarsız bir
+akaryakıt fiyat servisi (UcuzYakıtBul'un `/api/prices/national` uç noktası)
+denendi, veri doğru geliyor ama yanıtında `Access-Control-Allow-Origin`
+**yok** — OSRM/Open-Meteo/TomTom'un aksine bu servis tarayıcıdan doğrudan
+`fetch()` ile çağrılmak üzere tasarlanmamış, Same-Origin Policy isteği
+sessizce engelliyor. (EPDK'nın resmi web servisi de bir alternatif ama XML/
+SOAP formatında ve CORS'a açık olduğuna dair bir garanti yok.)
+
+**Çözüm — projenin kendi statik "API noktası":** `.github/workflows/fuel-price.yml`,
+GitHub Actions'ın zamanlanmış (`cron: '0 */6 * * *'`, 6 saatte bir + elle
+tetiklenebilir `workflow_dispatch`) bir iş akışında o servisi **sunucu
+tarafından** (GitHub'ın runner'ından, CORS derdi olmadan) çeker ve sonucu
+`data/fuel-price.json`'a yazıp repoya commit'ler:
+
+```json
+{ "motorin": 87.14, "benzin": 75.38, "updatedAt": "...", "source": "..." }
+```
+
+`js/fuelprice.js` bu dosyayı `raw.githubusercontent.com/<owner>/<repo>/main/data/fuel-price.json`
+adresinden okur — bu adres statik dosyaları `Access-Control-Allow-Origin: *`
+ile sunduğundan tarayıcıdan sorunsuz çağrılabiliyor. Kaynak veri zaten günde
+bir kez güncellendiğinden (`updatedAt` alanı) 6 saatlik döngü pratikte
+gerçek zamanlı kadar güncel kalıyor. Bu yaklaşımın projenin "backend'siz"
+felsefesine (bkz. §1) diğer alternatiflerden (Cloudflare Workers/Vercel gibi
+bir proxy fonksiyonu) daha yakın olduğuna karar verildi: hiçbir sunucu/hesap/
+fatura riski yok, sadece bir GitHub Actions iş akışı.
+
+**Best-effort, weather.js ile aynı felsefe:** `fetchNational()` ağ hatası,
+dosya henüz oluşmamış (ilk kurulumda `data/fuel-price.json` yoksa) ya da
+bozuk JSON durumunda sessizce `null` döner — hiçbir zaman planlamayı
+bloke etmez. `app.js` → `effectiveFuelPrice()` şu önceliği uygular:
+
+```
+kullanıcının Trafik Ayarları > Yakıt'tan ELLE girdiği fiyat (D.state.fuel)
+  → js/fuelprice.js'in otomatik çektiği ulusal ortalama (bellekte, kalıcı değil)
+  → null ("Fiyat girilmedi", rakam asla uydurulmaz)
+```
+
+**Dönüş bacağı:** `fleet.js` her zaman `returnToStart:false` ile çalıştığı
+için (bkz. §8) `group.result.distance` depoya dönüşü içermez. Yakıt
+maliyeti gerçek harcanan mesafeye (gidiş + dönüş) göre hesaplanmak
+istendiğinden, `app.js` → `returnLegMeters()` bunu `group.localDistances`
+(zaten `fleet.js` → `buildGroup()` tarafından her grup nesnesinde saklanıyor,
+bkz. §8.1) üzerinden ayrıca ekler — `group.order`'daki son durağın local
+matriste 0. indekse (depo) olan mesafesi. Bu yüzden rota tablosundaki
+"Toplam Mesafe" ile yakıt maliyeti hesabındaki km birebir aynı değildir;
+karışıklığı önlemek için özet kartında "(dönüş dahil)" notu gösterilir.
+
+**Araç tüketimi varsayılanları:** `data.js` → `DEFAULT_VEHICLES`, Fiat
+Ducato ve Peugeot Partner için üreticinin karma çevrim ortalamasına yakın
+başlangıç değerleri taşır (sırasıyla 7 ve 5.8 L/100km) — gerçek filo
+verisi (yakıt fişi/depo kaydı) girildikçe Araçlar modalından araç başına
+elle güncellenmesi önerilir; yüklü/şehir içi kullanımda gerçek tüketim
+üretici rakamlarının üzerine çıkabilir.
+
 ---
 
 ## 11. Excel / PDF dışa aktarım
@@ -896,6 +974,8 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
 | TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
 | Otomatik test yok | — | `optimizer.js`/`fleet.js` değişikliklerinde regresyon elle test edilmeli |
+| Yakıt fiyatı dolaylı/gecikmeli | Kaynak servis CORS'a kapalı olduğundan tarayıcı `data/fuel-price.json`'ı okuyor, o dosya da GitHub Actions ile 6 saatte bir güncelleniyor (bkz. §10.4) | Repo bir GitHub uzak sunucusuna (`origin`) bağlı değilse ya da Actions devre dışı bırakılırsa otomatik fiyat hiç gelmez, kullanıcı elle girmek zorunda kalır — uygulama yine çalışır, sadece "Fiyat girilmedi" gösterir |
+| Yakıt tüketimi varsayılanı tahmini | `DEFAULT_VEHICLES.fuelConsumption` üreticinin karma çevrim ortalaması, gerçek/yüklü sahne verisi değil | Gerçek filo verisi (yakıt fişi) girilene kadar yakıt maliyeti tahmini olduğundan sapabilir — araç bazında Araçlar modalından elle düzeltilmesi önerilir |
 
 ---
 
