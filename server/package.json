@@ -1,0 +1,18 @@
+{
+  "name": "tss-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TSS Rota Planlama Paneli — backend (Express + SQLite)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "import": "node scripts/import-localstorage.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}
