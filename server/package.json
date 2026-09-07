@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node index.js",
     "import": "node scripts/import-localstorage.js",
-    "smoke": "node scripts/smoke-test.js"
+    "smoke": "node scripts/smoke-test.js",
+    "sync-test": "node scripts/sync-test.js",
+    "test": "npm run smoke && npm run sync-test"
   },
   "license": "ISC",
   "dependencies": {

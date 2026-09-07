@@ -537,38 +537,343 @@
     return { added: added, skipped: skipped };
   }
 
+  /* =========================================================
+     Backend senkronizasyonu (opsiyonel, geriye dönük uyumlu)
+     =========================================================
+     TEMEL KURAL: Aşağıdaki hiçbir şey TSSData'nın dışa açık
+     fonksiyonlarını asenkron yapmaz. Her fonksiyon bugünkü gibi
+     senkron çalışır, aynı tick'te aynı değeri döndürür — js/app.js'teki
+     60+ çağrı noktası hiç değişmeden çalışmaya devam eder.
+
+     Mimari (bkz. plan dosyası):
+       - Backend + SQLite = tek gerçek veri kaynağı (source of truth)
+       - localStorage    = hızlı açılış önbelleği + outbox tamponu
+       - Yazmalar: önce yerel (anında, senkron), sonra arka planda
+         outbox üzerinden sunucuya; başarısız olursa kuyrukta kalır ve
+         bağlantı gelince otomatik tekrar denenir.
+
+     Backend hiç yapılandırılmazsa (ör. index.html çift tıklanarak
+     file:// ile açıldıysa) bu bölüm tamamen devre dışı kalır ve
+     uygulama birebir eski haliyle, saf localStorage ile çalışır.
+     ========================================================= */
+
+  var OUTBOX_KEY = 'tss-outbox-v1';
+  var TOKEN_KEY = 'tss-remote-token-v1';
+  var RETRY_MS = 30000;
+  var MAX_ATTEMPTS = 50;    // kalıcı olarak başarısız bir işlem kuyruğu sonsuza dek şişirmesin
+
+  var remote = null;         // { baseUrl: string, token: string }
+  var outbox = [];
+  var flushing = false;
+  var retryTimer = null;
+  var onlineBound = false;
+  var syncListeners = [];
+  var errorListeners = [];
+
+  function loadOutbox() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(OUTBOX_KEY));
+      outbox = Array.isArray(raw) ? raw : [];
+    } catch (e) { outbox = []; }
+  }
+
+  function saveOutbox() {
+    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox)); } catch (e) { /* sessiz */ }
+  }
+
+  function notifySync() {
+    syncListeners.forEach(function (fn) { try { fn(); } catch (e) { /* dinleyici hatası yayılmasın */ } });
+  }
+
+  function notifyError(message, kind) {
+    errorListeners.forEach(function (fn) { try { fn(message, kind); } catch (e) { /* sessiz */ } });
+  }
+
+  function apiFetch(method, path, body) {
+    var options = { method: method, headers: { 'Content-Type': 'application/json' } };
+    // Token YALNIZCA header'da taşınır; URL query string'ine asla konmaz.
+    if (remote.token) options.headers['X-TSS-Token'] = remote.token;
+    if (body !== undefined) options.body = JSON.stringify(body);
+    return fetch(remote.baseUrl + path, options);
+  }
+
+  function enqueue(op) {
+    op.id = uid('op');
+    op.createdAt = Date.now();
+    op.attempts = 0;
+    outbox.push(op);
+    saveOutbox();
+    flushOutbox();
+  }
+
+  function scheduleRetry() {
+    if (retryTimer || !outbox.length) return;
+    retryTimer = setTimeout(function () {
+      retryTimer = null;
+      flushOutbox();
+    }, RETRY_MS);
+  }
+
+  // Kuyruğu SIRAYLA boşaltır (sıra önemli: "ekle" sonra "sil" gibi bağımlı
+  // işlemler var). Tamamen boşaldıysa true döner.
+  function flushOutbox() {
+    if (!remote || flushing) return Promise.resolve(!outbox.length);
+    if (!outbox.length) return Promise.resolve(true);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      scheduleRetry();
+      return Promise.resolve(false);
+    }
+    flushing = true;
+
+    function step() {
+      if (!outbox.length) return Promise.resolve(true);
+      var op = outbox[0];
+      op.attempts++;
+      if (op.attempts > MAX_ATTEMPTS) {
+        outbox.shift();
+        saveOutbox();
+        notifyError('Bir değişiklik defalarca denendi ama sunucuya kaydedilemedi, kuyruktan çıkarıldı.', 'dropped');
+        return step();
+      }
+      return apiFetch(op.method, op.path, op.body).then(function (res) {
+        if (res.ok) {
+          outbox.shift();
+          saveOutbox();
+          return step();
+        }
+        if (res.status === 401) {
+          // Token sorunu: kuyruk KORUNUR, anahtar düzelince kaldığı yerden devam eder.
+          notifyError('Sunucu erişim anahtarını kabul etmedi — değişiklikler henüz kaydedilmedi.', 'auth');
+          return false;
+        }
+        if (res.status >= 400 && res.status < 500) {
+          // Kalıcı hata (doğrulama/bulunamadı): tekrar denemek işe yaramaz,
+          // kuyruğu tıkamasın diye düşürülür.
+          outbox.shift();
+          saveOutbox();
+          notifyError('Bir değişiklik sunucu tarafından reddedildi (HTTP ' + res.status + ').', 'rejected');
+          return step();
+        }
+        return false;   // 5xx: sunucu geçici olarak sorunlu, sonra tekrar dene
+      }, function () {
+        return false;   // ağ hatası: sonra tekrar dene
+      });
+    }
+
+    return step().then(function (drained) {
+      flushing = false;
+      if (!drained) scheduleRetry();
+      return drained;
+    }, function () {
+      flushing = false;
+      scheduleRetry();
+      return false;
+    });
+  }
+
+  // Sunucudan gelen veriyi state'e uygular. `stops` ve `plan`'a DOKUNMAZ —
+  // onlar bugünkü gibi tarayıcıda kalan geçici taslak veriler.
+  function applyRemoteState(data) {
+    if (!data || typeof data !== 'object') return;
+    if (Array.isArray(data.locations)) state.locations = data.locations;
+    if (Array.isArray(data.vehicles)) {
+      state.vehicles = data.vehicles;
+      // load()'daki geriye dönük uyumluluk düzeltmesinin aynısı
+      state.vehicles.forEach(function (v) {
+        var c = Number(v.fuelConsumption);
+        if (!isFinite(c) || c <= 0) v.fuelConsumption = DEFAULT_FUEL_CONSUMPTION;
+        if (v.fuelType !== 'benzin') v.fuelType = 'dizel';
+      });
+    }
+    if (Array.isArray(data.history)) state.history = data.history;
+    if (data.traffic) state.traffic = data.traffic;
+    if (data.fuel) state.fuel = data.fuel;
+    if (typeof data.tomtomApiKey === 'string') state.tomtomApiKey = data.tomtomApiKey;
+
+    // Silinen bir lokasyona bağlı taslak duraklar ortada kalmasın
+    var validIds = {};
+    state.locations.forEach(function (l) { validIds[l.id] = true; });
+    state.stops = state.stops.filter(function (s) { return validIds[s.locationId]; });
+  }
+
+  // Açılışta (ve istendiğinde) sunucudaki güncel veriyi çeker.
+  // ÖNEMLİ: önce outbox boşaltılır — bekleyen yerel yazmalar sunucuya
+  // gitmeden sunucu verisi üzerine yazılırsa o değişiklikler kaybolurdu.
+  function syncFromRemote() {
+    if (!remote) return Promise.resolve(false);
+    return flushOutbox().then(function (drained) {
+      if (!drained) return false;
+      return apiFetch('GET', '/api/bootstrap').then(function (res) {
+        if (!res.ok) {
+          if (res.status === 401) {
+            notifyError('Sunucu erişim anahtarı geçersiz — veriler yerel kopyadan gösteriliyor.', 'auth');
+          }
+          return false;
+        }
+        return res.json().then(function (data) {
+          applyRemoteState(data);
+          save();            // yerel önbelleği tazele
+          notifySync();      // app.js ekranı yeniden çizer
+          return true;
+        });
+      });
+    })['catch'](function () { return false; });
+  }
+
+  /**
+   * Backend'i devreye alır. Çağrılmazsa data.js birebir eski haliyle
+   * (saf localStorage) çalışır — anında geri dönüş yolu budur.
+   * opts: { baseUrl: '' (aynı origin), token: '...' }
+   */
+  function configureRemote(opts) {
+    remote = {
+      baseUrl: (opts && opts.baseUrl) || '',
+      token: (opts && opts.token !== undefined) ? String(opts.token || '') : getRemoteToken()
+    };
+    loadOutbox();
+
+    if (!onlineBound && typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('online', function () { flushOutbox(); });
+      onlineBound = true;
+    }
+    return syncFromRemote();
+  }
+
+  // Sayfa bir sunucudan servis ediliyorsa (file:// değilse) backend vardır
+  // varsayımı: çift tıklayarak açma senaryosu eskisi gibi çalışmaya devam eder.
+  function autoConfigureRemote() {
+    if (typeof location === 'undefined') return Promise.resolve(false);
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return Promise.resolve(false);
+    return configureRemote({ baseUrl: '' });
+  }
+
+  function getRemoteToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function setRemoteToken(token) {
+    var value = String(token || '').trim();
+    try { localStorage.setItem(TOKEN_KEY, value); } catch (e) { /* sessiz */ }
+    if (remote) remote.token = value;
+    return value;
+  }
+
+  function isRemoteEnabled() { return !!remote; }
+
+  function pendingSyncCount() { return outbox.length; }
+
+  function onRemoteSync(fn) { if (typeof fn === 'function') syncListeners.push(fn); }
+  function onSyncError(fn) { if (typeof fn === 'function') errorListeners.push(fn); }
+
+  /* ---- yazma fonksiyonlarını saran ince katman ----
+     Orijinal fonksiyon önce AYNEN (senkron) çalışır ve sonucunu döndürür;
+     çağıran kod hiçbir fark görmez. Ardından karşılık gelen REST isteği
+     outbox'a yazılır. Fonksiyon gövdelerinin hiçbiri değiştirilmedi. */
+  function syncing(fn, buildOp) {
+    return function () {
+      var args = Array.prototype.slice.call(arguments);
+      var result = fn.apply(null, args);
+      if (remote) {
+        try {
+          var op = buildOp(result, args);
+          if (op) enqueue(op);
+        } catch (e) { /* senkronizasyon hiçbir zaman UI akışını bozmaz */ }
+      }
+      return result;
+    };
+  }
+
+  // Excel içe aktarma, içeride addLocation/addVehicle'ın SARILMAMIŞ halini
+  // çağırdığı için ayrı ele alınır: işlem sonrası yeni eklenen kayıtlar
+  // tespit edilip tek tek kuyruğa yazılır.
+  function syncingImport(fn, listName, path) {
+    return function (rows) {
+      var before = {};
+      state[listName].forEach(function (item) { before[item.id] = true; });
+      var result = fn(rows);
+      if (remote) {
+        state[listName].forEach(function (item) {
+          if (!before[item.id]) enqueue({ method: 'POST', path: path, body: item });
+        });
+      }
+      return result;
+    };
+  }
+
   global.TSSData = {
     state: state,
     uid: uid,
     load: load,
     save: save,
     resetToDefaults: resetToDefaults,
+
+    // --- okuma (backend'den etkilenmez, hepsi bellekten anında döner) ---
     getTrafficSettings: getTrafficSettings,
-    updateTrafficSettings: updateTrafficSettings,
     getTomTomApiKey: getTomTomApiKey,
-    setTomTomApiKey: setTomTomApiKey,
     getFuelPriceSettings: getFuelPriceSettings,
-    updateFuelPriceSettings: updateFuelPriceSettings,
-    addLocation: addLocation,
-    removeLocation: removeLocation,
-    updateLocation: updateLocation,
     getLocation: getLocation,
-    addVehicle: addVehicle,
-    removeVehicle: removeVehicle,
     getVehicle: getVehicle,
-    setUsableCapacity: setUsableCapacity,
-    updateVehicle: updateVehicle,
+    getHistory: getHistory,
+    totalPickups: totalPickups,
+    totalDeliveries: totalDeliveries,
+    totalFleetCapacity: totalFleetCapacity,
+
+    // --- taslak duraklar (kalıcı değil, backend'e hiç gitmez) ---
     addStop: addStop,
     removeStop: removeStop,
     updateStopPallets: updateStopPallets,
     clearStops: clearStops,
-    approveTrip: approveTrip,
-    getHistory: getHistory,
-    removeHistoryEntry: removeHistoryEntry,
-    totalPickups: totalPickups,
-    totalDeliveries: totalDeliveries,
-    totalFleetCapacity: totalFleetCapacity,
-    importLocationRows: importLocationRows,
-    importVehicleRows: importVehicleRows
+
+    // --- yazma (senkron davranış aynı + arka planda backend'e iletilir) ---
+    updateTrafficSettings: syncing(updateTrafficSettings, function (traffic) {
+      return { method: 'PATCH', path: '/api/settings/traffic', body: traffic };
+    }),
+    setTomTomApiKey: syncing(setTomTomApiKey, function () {
+      return { method: 'PATCH', path: '/api/settings/tomtom-key', body: { tomtomApiKey: state.tomtomApiKey } };
+    }),
+    updateFuelPriceSettings: syncing(updateFuelPriceSettings, function (fuel) {
+      return { method: 'PATCH', path: '/api/settings/fuel', body: fuel };
+    }),
+    addLocation: syncing(addLocation, function (loc) {
+      return { method: 'POST', path: '/api/locations', body: loc };
+    }),
+    removeLocation: syncing(removeLocation, function (result, args) {
+      return { method: 'DELETE', path: '/api/locations/' + encodeURIComponent(args[0]) };
+    }),
+    updateLocation: syncing(updateLocation, function (loc) {
+      return loc ? { method: 'PUT', path: '/api/locations/' + encodeURIComponent(loc.id), body: loc } : null;
+    }),
+    addVehicle: syncing(addVehicle, function (veh) {
+      return { method: 'POST', path: '/api/vehicles', body: veh };
+    }),
+    removeVehicle: syncing(removeVehicle, function (result, args) {
+      return { method: 'DELETE', path: '/api/vehicles/' + encodeURIComponent(args[0]) };
+    }),
+    setUsableCapacity: syncing(setUsableCapacity, function (result, args) {
+      var veh = getVehicle(args[0]);
+      return veh ? { method: 'PATCH', path: '/api/vehicles/' + encodeURIComponent(veh.id) + '/usable', body: { usable: veh.usable } } : null;
+    }),
+    updateVehicle: syncing(updateVehicle, function (veh) {
+      return veh ? { method: 'PUT', path: '/api/vehicles/' + encodeURIComponent(veh.id), body: veh } : null;
+    }),
+    approveTrip: syncing(approveTrip, function (entry) {
+      return { method: 'POST', path: '/api/trips', body: entry };
+    }),
+    removeHistoryEntry: syncing(removeHistoryEntry, function (result, args) {
+      return { method: 'DELETE', path: '/api/trips/' + encodeURIComponent(args[0]) };
+    }),
+    importLocationRows: syncingImport(importLocationRows, 'locations', '/api/locations'),
+    importVehicleRows: syncingImport(importVehicleRows, 'vehicles', '/api/vehicles'),
+
+    // --- backend katmanı (çağrılmazsa data.js eski haliyle çalışır) ---
+    configureRemote: configureRemote,
+    autoConfigureRemote: autoConfigureRemote,
+    syncFromRemote: syncFromRemote,
+    onRemoteSync: onRemoteSync,
+    onSyncError: onSyncError,
+    getRemoteToken: getRemoteToken,
+    setRemoteToken: setRemoteToken,
+    isRemoteEnabled: isRemoteEnabled,
+    pendingSyncCount: pendingSyncCount
   };
 })(window);

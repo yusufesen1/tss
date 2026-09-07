@@ -2427,6 +2427,29 @@
       return;
     }
 
+    // Backend (varsa): sayfa bir sunucudan servis ediliyorsa devreye girer,
+    // index.html çift tıklanarak açıldıysa hiç çalışmaz ve panel eskisi gibi
+    // yalnızca localStorage ile çalışır. Yakıt fiyatındaki desenin aynısı:
+    // arka planda, hiçbir şeyi bloke etmeden — ekran önce yerel önbellekten
+    // çizilir, sunucu verisi gelince sessizce tazelenir.
+    if (D.autoConfigureRemote) {
+      D.onRemoteSync(function () {
+        refreshSelects();
+        renderStops();
+        renderLocationTable();
+        renderVehicleTable();
+        renderHistoryTable();
+        updateCapacity();
+        // Trafik/yakıt formu açıkken yeniden çizilirse kullanıcının o an
+        // yazdığı değer ezilir — modal kapalıyken tazelemek yeterli.
+        if ($('modalTraffic') && $('modalTraffic').hidden) renderTrafficSettings();
+        // Haritadaki çizili rotayı silmemek için yalnızca plan yokken.
+        if (!D.state.plan) drawIdleMarkers();
+      });
+      D.onSyncError(function (message) { toast(message, 'error'); });
+      D.autoConfigureRemote();
+    }
+
     // Otomatik yakıt fiyatı: en iyi çaba, arka planda — hiçbir şeyi
     // bloke etmez, başarısız olursa kullanıcı elle girer (bkz. fuelprice.js).
     if (FuelPrice) {
