@@ -16,6 +16,7 @@
   var map, routeLayer, markerLayer;
   var toastTimer = null;
   var editingVehicleId = null;
+  var infoVehicleId = null;   // Araç Bilgileri modalında açık olan araç
   var editingLocationId = null;
   var draggedRowInfo = null; // { group, index } — sürükle-bırakta hangi araç grubunun hangi satırı taşınıyor
   // Son başarılı planRoute() çağrısının OSRM matrisi + girdileri — "Karşılaştır"
@@ -1838,6 +1839,171 @@
     });
   }
 
+  /* =========================================================
+     Araç belge/geçerlilik bilgisi
+     =========================================================
+     Türkiye'de kullanımdaki bir araç için takip edilen belgeler. Bunlar
+     OTOMATİK SORGULANAMIYOR: e-Devlet ve TÜVTÜRK sorguları kişisel kimlik
+     doğrulaması istiyor, filo için halka açık bir API yok. Bu yüzden
+     tarihler elle giriliyor, panel de yaklaşan/geçen süreleri hesaplayıp
+     uyarıyor. Doğrulama kuralları js/data.js + server/store.js'te. */
+
+  var VEHICLE_DOCS = [
+    { key: 'inspectionUntil', label: 'Muayene (TÜVTÜRK)',    hint: 'Periyodik araç muayenesi geçerlilik sonu' },
+    { key: 'insuranceUntil',  label: 'Trafik Sigortası',      hint: 'Zorunlu Mali Sorumluluk (ZMSS) bitişi' },
+    { key: 'kaskoUntil',      label: 'Kasko',                 hint: 'İsteğe bağlı — poliçe bitişi' },
+    { key: 'emissionUntil',   label: 'Egzoz Emisyon Ölçümü',  hint: 'Egzoz gazı emisyon ölçüm geçerliliği' },
+    { key: 'permitUntil',     label: 'Yetki Belgesi (K)',     hint: 'Ticari taşımacılık yetki belgesi bitişi' },
+    { key: 'tachographUntil', label: 'Takograf Kalibrasyonu', hint: 'Dijital takograf kalibrasyon geçerliliği' }
+  ];
+
+  var DOC_WARN_DAYS = 30;   // bu eşiğin altında kalınca "yaklaşıyor" sayılır
+
+  function todayUtc() {
+    var n = new Date();
+    return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+  }
+
+  // "YYYY-MM-DD" → { status, daysLeft, text }
+  // status: 'none' (girilmemiş) | 'ok' | 'soon' | 'expired'
+  function documentStatus(value) {
+    if (!value) return { status: 'none', daysLeft: null, text: 'Girilmemiş' };
+    var parts = String(value).split('-');
+    var due = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    var days = Math.round((due - todayUtc()) / 86400000);
+    if (days < 0) return { status: 'expired', daysLeft: days, text: Math.abs(days) + ' gün önce doldu' };
+    if (days === 0) return { status: 'soon', daysLeft: 0, text: 'Bugün doluyor' };
+    if (days <= DOC_WARN_DAYS) return { status: 'soon', daysLeft: days, text: days + ' gün kaldı' };
+    return { status: 'ok', daysLeft: days, text: days + ' gün kaldı' };
+  }
+
+  // Bir aracın tüm belgelerinin en kötü durumu — tablodaki butonun rengi için
+  function vehicleDocumentState(veh) {
+    var expired = [], soon = [];
+    VEHICLE_DOCS.forEach(function (doc) {
+      var st = documentStatus(veh[doc.key]);
+      if (st.status === 'expired') expired.push(doc.label);
+      else if (st.status === 'soon') soon.push(doc.label);
+    });
+    if (expired.length) return { worst: 'expired', summary: 'Süresi dolmuş: ' + expired.join(', ') };
+    if (soon.length) return { worst: 'soon', summary: 'Yakında dolacak: ' + soon.join(', ') };
+    return { worst: null, summary: 'Araç bilgileri' };
+  }
+
+  // Ekranda GG.AA.YYYY göster (giriş alanı ISO tutar)
+  function formatDocDate(value) {
+    if (!value) return '—';
+    var p = String(value).split('-');
+    return p[2] + '.' + p[1] + '.' + p[0];
+  }
+
+  function openVehicleInfo(vehicleId) {
+    if (!D.getVehicle(vehicleId)) return;
+    infoVehicleId = vehicleId;
+    renderVehicleInfo();
+    openModal('modalVehicleInfo');
+  }
+
+  function renderVehicleInfo() {
+    var veh = D.getVehicle(infoVehicleId);
+    if (!veh) { closeModal('modalVehicleInfo'); return; }
+
+    $('vehicleInfoTitle').textContent = veh.plate + (veh.model ? ' · ' + veh.model : '');
+
+    var body = $('vehicleInfoBody');
+    body.innerHTML = '';
+
+    // Mevcut modallarla aynı yapı: .form-card > .field-row (bkz. Araçlar modalı)
+    var idCard = document.createElement('div');
+    idCard.className = 'form-card';
+    var idRow = document.createElement('div');
+    idRow.className = 'field-row field-row-2';
+    idRow.appendChild(buildInfoField('Şasi No (VIN)', 'infoChassisNo', 'text',
+      veh.chassisNo || '', 'Ruhsatta yazan şasi numarası'));
+    idRow.appendChild(buildInfoField('Model Yılı', 'infoModelYear', 'number',
+      veh.modelYear != null ? veh.modelYear : '', 'Örn. 2019'));
+    idCard.appendChild(idRow);
+    body.appendChild(idCard);
+
+    var list = document.createElement('div');
+    list.className = 'doc-list';
+    VEHICLE_DOCS.forEach(function (doc) { list.appendChild(buildDocRow(veh, doc)); });
+    body.appendChild(list);
+
+    var note = document.createElement('p');
+    note.className = 'hint doc-note';
+    note.textContent = 'Bu bilgiler otomatik sorgulanamıyor — e-Devlet ve TÜVTÜRK ' +
+      'sorguları kişisel kimlik doğrulaması istiyor, filo için halka açık bir API yok. ' +
+      'Tarihleri elle girin; panel kalan süreyi hesaplar ve ' + DOC_WARN_DAYS +
+      ' günden az kalınca uyarır.';
+    body.appendChild(note);
+  }
+
+  function buildInfoField(label, id, type, value, hint) {
+    var group = document.createElement('div');
+    group.className = 'field-group';
+    var lab = document.createElement('label');
+    lab.className = 'label label-sm';
+    lab.setAttribute('for', id);
+    lab.textContent = label;
+    group.appendChild(lab);
+    var inp = document.createElement('input');
+    inp.type = type;
+    inp.id = id;
+    inp.className = 'input input-sm';
+    inp.value = value;
+    if (hint) inp.placeholder = hint;
+    if (type === 'number') { inp.min = 1950; inp.max = new Date().getFullYear() + 1; }
+    group.appendChild(inp);
+    return group;
+  }
+
+  function buildDocRow(veh, doc) {
+    var st = documentStatus(veh[doc.key]);
+    var row = document.createElement('div');
+    row.className = 'doc-row';
+
+    var head = document.createElement('div');
+    head.className = 'doc-head';
+    var name = document.createElement('span');
+    name.className = 'doc-label';
+    name.textContent = doc.label;
+    name.title = doc.hint;
+    head.appendChild(name);
+
+    var badge = document.createElement('span');
+    badge.className = 'doc-badge doc-' + st.status;
+    badge.textContent = st.text;
+    head.appendChild(badge);
+    row.appendChild(head);
+
+    var inp = document.createElement('input');
+    inp.type = 'date';
+    inp.className = 'input input-sm doc-input';
+    inp.id = 'doc-' + doc.key;
+    inp.value = veh[doc.key] || '';
+    row.appendChild(inp);
+
+    return row;
+  }
+
+  function saveVehicleInfo() {
+    if (!D.getVehicle(infoVehicleId)) return;
+    var patch = {
+      chassisNo: $('infoChassisNo').value,
+      modelYear: $('infoModelYear').value
+    };
+    VEHICLE_DOCS.forEach(function (doc) { patch[doc.key] = $('doc-' + doc.key).value; });
+    try {
+      D.updateVehicle(infoVehicleId, patch);
+      renderVehicleInfo();     // rozetler yeni tarihlere göre tazelensin
+      renderVehicleTable();    // tablodaki "i" butonunun rengi de güncellensin
+      toast('Araç bilgileri kaydedildi.', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
   function renderVehicleTable() {
     var body = $('vehicleTableBody');
     body.innerHTML = '';
@@ -1949,10 +2115,33 @@
         return;
       }
 
-      tr.innerHTML =
-        '<td class="cell-name">' + escapeHtml(veh.plate) + '</td>' +
-        '<td>' + escapeHtml(veh.model || '—') + '</td>' +
-        '<td class="center">' + veh.capacity + '</td>';
+      // Plaka hücresi: solda belge/geçerlilik bilgisini açan "i" butonu.
+      // Bir belge süresi geçmişse buton uyarı rengine döner — kullanıcı
+      // tabloya bakınca hangi araçta sorun olduğunu açmadan görür.
+      var tdPlate = document.createElement('td');
+      tdPlate.className = 'cell-name plate-cell';
+      var docState = vehicleDocumentState(veh);
+      var btnInfo = document.createElement('button');
+      btnInfo.type = 'button';
+      btnInfo.className = 'btn-info' + (docState.worst ? ' btn-info-' + docState.worst : '');
+      btnInfo.textContent = 'i';
+      btnInfo.title = docState.summary;
+      btnInfo.setAttribute('aria-label', escapeHtml(veh.plate) + ' — araç bilgileri');
+      btnInfo.addEventListener('click', function () { openVehicleInfo(veh.id); });
+      tdPlate.appendChild(btnInfo);
+      var plateText = document.createElement('span');
+      plateText.textContent = veh.plate;
+      tdPlate.appendChild(plateText);
+      tr.appendChild(tdPlate);
+
+      var tdModel = document.createElement('td');
+      tdModel.textContent = veh.model || '—';
+      tr.appendChild(tdModel);
+
+      var tdCapacity = document.createElement('td');
+      tdCapacity.className = 'center';
+      tdCapacity.textContent = veh.capacity;
+      tr.appendChild(tdCapacity);
 
       var tdUsable = document.createElement('td');
       tdUsable.className = 'center';
@@ -2321,6 +2510,8 @@
       });
       renderHistoryTable();
     });
+
+    $('btnSaveVehicleInfo').addEventListener('click', saveVehicleInfo);
 
     $('btnTrafficSettings').addEventListener('click', function () {
       renderTrafficSettings();

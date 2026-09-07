@@ -172,6 +172,49 @@ function run() {
     })
 
     .then(function () {
+      console.log('\n— araç belge/geçerlilik alanları —');
+      return api('POST', '/api/vehicles', {
+        plate: '34 BLG 001', capacity: 3,
+        inspectionUntil: '2027-03-15', insuranceUntil: '2026-12-01',
+        chassisNo: 'nmtbb1bd50z123456', modelYear: 2019
+      }).then(function (r) {
+        check('belge alanlarıyla araç eklenir', r.status === 200, 'status=' + r.status);
+        check('muayene tarihi saklanır', r.body && r.body.inspectionUntil === '2027-03-15',
+          JSON.stringify(r.body && r.body.inspectionUntil));
+        check('şasi no büyük harfe çevrilir', r.body && r.body.chassisNo === 'NMTBB1BD50Z123456',
+          JSON.stringify(r.body && r.body.chassisNo));
+        check('model yılı sayı olarak saklanır', r.body && r.body.modelYear === 2019);
+        check('girilmeyen belge null kalır', r.body && r.body.kaskoUntil === null);
+        return r.body.id;
+      });
+    })
+    .then(function (id) {
+      return api('PUT', '/api/vehicles/' + id, { kaskoUntil: '2026-11-30' }).then(function (r) {
+        check('kısmi güncelleme diğer belgeleri korur',
+          r.body && r.body.kaskoUntil === '2026-11-30' && r.body.inspectionUntil === '2027-03-15',
+          JSON.stringify(r.body));
+        check('kısmi güncellemede plaka korunur', r.body && r.body.plate === '34 BLG 001');
+        return id;
+      });
+    })
+    .then(function (id) {
+      return api('PUT', '/api/vehicles/' + id, { inspectionUntil: '15.03.2027' }).then(function (r) {
+        check('hatalı tarih biçimi reddedilir', r.status === 400, 'status=' + r.status);
+        return api('PUT', '/api/vehicles/' + id, { inspectionUntil: '2027-02-31' });
+      }).then(function (r) {
+        check('var olmayan tarih (31 Şubat) reddedilir', r.status === 400, 'status=' + r.status);
+        return api('PUT', '/api/vehicles/' + id, { modelYear: 1920 });
+      }).then(function (r) {
+        check('aralık dışı model yılı reddedilir', r.status === 400, 'status=' + r.status);
+        return api('PUT', '/api/vehicles/' + id, { inspectionUntil: '' });
+      }).then(function (r) {
+        check('boş tarih alanı temizler (null)', r.body && r.body.inspectionUntil === null,
+          JSON.stringify(r.body && r.body.inspectionUntil));
+        return api('DELETE', '/api/vehicles/' + id);
+      });
+    })
+
+    .then(function () {
       console.log('\n— sefer geçmişi —');
       var trip = {
         id: 'trip-smoke-1',

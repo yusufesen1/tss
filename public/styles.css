@@ -900,3 +900,78 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   font-size: 13px;
   color: var(--n-500);
 }
+
+/* =========================================================
+   Araç bilgi butonu ve belge geçerlilikleri
+   Renkler tasarım sisteminden: geçerli -> forest/mint,
+   sorun -> marka kirmizisi (paletde ayri bir uyari rengi yok).
+   ========================================================= */
+.plate-cell{ display: flex; align-items: center; gap: 8px; }
+
+.btn-info{
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--n-300);
+  background: var(--n-0);
+  color: var(--n-600);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background var(--t), border-color var(--t), color var(--t);
+}
+.btn-info:hover{ background: var(--n-100); border-color: var(--n-400); color: var(--n-800); }
+
+/* Belgelerden biri yaklasiyorsa/dolmussa buton tabloda kendini belli eder */
+.btn-info-soon{
+  border-color: var(--tss-kirmizi-30);
+  background: var(--tss-kirmizi-10);
+  color: var(--brand-red-dark);
+}
+.btn-info-expired{
+  border-color: var(--brand-red);
+  background: var(--brand-red);
+  color: var(--n-0);
+}
+
+.doc-list{ display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+
+.doc-row{
+  display: grid;
+  grid-template-columns: 1fr 170px;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--n-200);
+  border-radius: var(--r-input);
+  background: var(--n-0);
+}
+.doc-head{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.doc-label{ font-size: 13px; font-weight: 600; color: var(--n-800); }
+.doc-input{ width: 100%; }
+
+.doc-badge{
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.doc-none{ background: var(--n-100); color: var(--n-500); }
+.doc-ok{ background: var(--brand-mint); color: var(--brand-forest); }
+.doc-soon{ background: var(--tss-kirmizi-10); color: var(--brand-red-dark); }
+.doc-expired{ background: var(--brand-red); color: var(--n-0); }
+
+.doc-note{ margin-top: 14px; }
+
+@media (max-width: 620px){
+  .doc-row{ grid-template-columns: 1fr; }
+}

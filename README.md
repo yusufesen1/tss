@@ -82,6 +82,11 @@ veriyle sessizce tazelenir. Gerçek veri kaynağı her zaman sunucudur.
    KPI/tablo bölümü) olarak dışa aktar — ikisi de yakıt maliyetini içerir.
 
 Lokasyon ve araç listeleri üst menüden yönetilir; ayrı Excel dosyalarından içe aktarılabilir.
+Araçlar tablosunda plakanın solundaki **"i" butonu** aracın belge geçerliliklerini
+(muayene, trafik sigortası, kasko, egzoz emisyonu, K belgesi, takograf) ve şasi no /
+model yılı bilgisini açar. Tarihler elle girilir — bu bilgiler e-Devlet/TÜVTÜRK üzerinden
+otomatik sorgulanamıyor (kişisel kimlik doğrulaması gerekiyor). Panel kalan süreyi
+hesaplar: 30 günden az kalınca ve süre dolduğunda "i" butonu uyarı rengine döner.
 Haritaya sağ tıklamak yeni lokasyon formunu koordinatlarla doldurur.
 Lokasyon, araç ve sefer geçmişi sunucuda saklanır — ekipteki herkes aynı listeyi
 görür. Taslak duraklar ve hesaplanan plan ise sadece o sekmede durur, sayfa

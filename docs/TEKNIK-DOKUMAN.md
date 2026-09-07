@@ -234,7 +234,10 @@ dışa ne verdiği anlatılıyor.
 ```js
 state = {
   locations: [ { id, name, lat, lng, from, until } ],
-  vehicles:  [ { id, plate, model, capacity, usable, fuelConsumption, fuelType } ],
+  vehicles:  [ { id, plate, model, capacity, usable, fuelConsumption, fuelType,
+                 // Belge/işlem geçerlilikleri — hepsi opsiyonel, "YYYY-MM-DD" ya da null
+                 inspectionUntil, insuranceUntil, kaskoUntil, emissionUntil,
+                 permitUntil, tachographUntil, chassisNo, modelYear } ],
   stops:     [ { id, locationId, type: 'pickup'|'delivery', pallets } ],
   plan:      null | { startLocation, isWeekend, groups:[...], warning, note },
   history:   [ { id, approvedAt, note, vehicles, vehicleSummary, start,
@@ -247,6 +250,24 @@ state = {
 ```
 
 Alan detayları:
+
+- **Araç belge/işlem geçerlilikleri** (`inspectionUntil`, `insuranceUntil`,
+  `kaskoUntil`, `emissionUntil`, `permitUntil`, `tachographUntil`) — Türkiye'de
+  kullanımdaki bir araç için takip edilen tarihler; `"YYYY-MM-DD"` ya da `null`
+  (girilmemiş). `chassisNo` (VIN, büyük harfe çevrilir) ve `modelYear` ile birlikte
+  Araçlar tablosundaki **"i" butonu** → Araç Bilgileri modalından yönetilir.
+
+  > Bunlar **otomatik sorgulanamıyor**: e-Devlet ve TÜVTÜRK sorguları kişisel
+  > kimlik doğrulaması istiyor, filo için halka açık bir API yok. Bu yüzden elle
+  > girilip son kullanma tarihi izleniyor. Panel kalan süreyi hesaplar; 30 günden
+  > az kalınca "yaklaşıyor", tarih geçtiyse "süresi dolmuş" olarak işaretler ve
+  > tablodaki "i" butonunun rengini değiştirir — kullanıcı modalı açmadan hangi
+  > araçta sorun olduğunu görür (`vehicleDocumentState`, `public/js/app.js`).
+
+  Doğrulama kuralları `public/js/data.js` ve `server/store.js`'te **birebir aynı**
+  olmak zorunda (§15): tarih biçimi `YYYY-MM-DD`, takvimde var olmayan tarih
+  (31 Şubat gibi) reddedilir, model yılı 1950–(bu yıl+1) aralığında, şasi no en
+  fazla 20 karakter. Boş değer alanı temizler (`null`).
 
 - **`vehicles[].capacity` vs `usable`** — `capacity` aracın fiziksel/nominal
   palet kapasitesi; `usable` o an için **kullanılabilir** kapasite (örn. bir

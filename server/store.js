@@ -84,6 +84,56 @@ function removeLocation(id) {
 
 /* ---------------- araçlar ---------------- */
 
+/* ---------- araç belge/işlem geçerlilikleri ----------
+   Türkiye'de kullanımdaki bir araç için takip edilen tarihler. Hepsi
+   OPSİYONEL: girilmemişse null kalır ve arayüzde "girilmemiş" görünür.
+   Bunlar otomatik sorgulanamıyor — e-Devlet/TÜVTÜRK sorguları kişisel
+   kimlik doğrulaması istiyor, halka açık bir API yok — bu yüzden elle
+   girilip son kullanma tarihi takip ediliyor.
+   Kural js/data.js ile BİREBİR aynı olmalı (bkz. CLAUDE.md). */
+var VEHICLE_DATE_FIELDS = [
+  'inspectionUntil',   // Muayene (TÜVTÜRK)
+  'insuranceUntil',    // Zorunlu trafik sigortası (ZMSS)
+  'kaskoUntil',        // Kasko
+  'emissionUntil',     // Egzoz emisyon ölçümü
+  'permitUntil',       // Yetki belgesi (K belgesi)
+  'tachographUntil'    // Takograf kalibrasyonu
+];
+
+// "YYYY-MM-DD" bekler; boş/geçersiz olan null döner (girilmemiş sayılır)
+function normalizeVehicleDate(value) {
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw ValidationError('Tarih GG.AA.YYYY biçiminde olmalı.');
+  }
+  var parts = text.split('-');
+  var y = Number(parts[0]), m = Number(parts[1]), day = Number(parts[2]);
+  var dt = new Date(Date.UTC(y, m - 1, day));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) {
+    throw ValidationError('Geçersiz tarih.');
+  }
+  return text;
+}
+
+function normalizeModelYear(value) {
+  var text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  var year = Number(text);
+  var current = new Date().getFullYear();
+  if (!isFinite(year) || year < 1950 || year > current + 1) {
+    throw ValidationError('Model yılı 1950 ile ' + (current + 1) + ' arasında olmalı.');
+  }
+  return Math.floor(year);
+}
+
+function normalizeChassisNo(value) {
+  var text = String(value == null ? '' : value).trim().toUpperCase();
+  if (!text) return null;
+  if (text.length > 20) throw ValidationError('Şasi no en fazla 20 karakter olabilir.');
+  return text;
+}
+
 function normalizeVehicleInput(data) {
   var plate = String((data && data.plate) || '').trim();
   var capacity = Math.floor(Number(data && data.capacity));
@@ -92,13 +142,19 @@ function normalizeVehicleInput(data) {
   var consumption = Number(data && data.fuelConsumption);
   if (!isFinite(consumption) || consumption <= 0) consumption = defaults.DEFAULT_FUEL_CONSUMPTION;
   var fuelType = (data && data.fuelType) === 'benzin' ? 'benzin' : 'dizel';
-  return {
+  var out = {
     plate: plate,
     model: String((data && data.model) || '').trim(),
     capacity: capacity,
     fuelConsumption: consumption,
-    fuelType: fuelType
+    fuelType: fuelType,
+    chassisNo: normalizeChassisNo(data && data.chassisNo),
+    modelYear: normalizeModelYear(data && data.modelYear)
   };
+  VEHICLE_DATE_FIELDS.forEach(function (f) {
+    out[f] = normalizeVehicleDate(data && data[f]);
+  });
+  return out;
 }
 
 function addVehicle(data) {
@@ -108,9 +164,13 @@ function addVehicle(data) {
   if (!isFinite(usable) || usable < 1 || usable > v.capacity) usable = v.capacity;
   var now = d.nowIso();
   db.prepare(
-    'INSERT INTO vehicles (id, plate, model, capacity, usable, fuel_consumption, fuel_type, created_at, updated_at) ' +
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, v.plate, v.model, v.capacity, usable, v.fuelConsumption, v.fuelType, now, now);
+    'INSERT INTO vehicles (id, plate, model, capacity, usable, fuel_consumption, fuel_type, ' +
+    'inspection_until, insurance_until, kasko_until, emission_until, permit_until, ' +
+    'tachograph_until, chassis_no, model_year, created_at, updated_at) ' +
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, v.plate, v.model, v.capacity, usable, v.fuelConsumption, v.fuelType,
+    v.inspectionUntil, v.insuranceUntil, v.kaskoUntil, v.emissionUntil, v.permitUntil,
+    v.tachographUntil, v.chassisNo, v.modelYear, now, now);
   return getVehicle(id);
 }
 
@@ -122,19 +182,30 @@ function getVehicle(id) {
 function updateVehicle(id, data) {
   var existing = getVehicle(id);
   if (!existing) return null;
-  var v = normalizeVehicleInput({
+  var merged = {
     plate: data && data.plate !== undefined ? data.plate : existing.plate,
     model: data && data.model !== undefined ? data.model : existing.model,
     capacity: data && data.capacity !== undefined ? data.capacity : existing.capacity,
     fuelConsumption: data && data.fuelConsumption !== undefined ? data.fuelConsumption : existing.fuelConsumption,
-    fuelType: data && data.fuelType !== undefined ? data.fuelType : existing.fuelType
+    fuelType: data && data.fuelType !== undefined ? data.fuelType : existing.fuelType,
+    chassisNo: data && data.chassisNo !== undefined ? data.chassisNo : existing.chassisNo,
+    modelYear: data && data.modelYear !== undefined ? data.modelYear : existing.modelYear
+  };
+  // Gönderilmeyen belge alanı mevcut değerini korur (kısmi güncelleme)
+  VEHICLE_DATE_FIELDS.forEach(function (f) {
+    merged[f] = (data && data[f] !== undefined) ? data[f] : existing[f];
   });
+  var v = normalizeVehicleInput(merged);
   // js/data.js ile aynı: kullanılabilir kapasite yeni kapasiteyi aşamaz
   var usable = Math.min(existing.usable, v.capacity);
   db.prepare(
     'UPDATE vehicles SET plate = ?, model = ?, capacity = ?, usable = ?, ' +
-    'fuel_consumption = ?, fuel_type = ?, updated_at = ? WHERE id = ?'
-  ).run(v.plate, v.model, v.capacity, usable, v.fuelConsumption, v.fuelType, d.nowIso(), id);
+    'fuel_consumption = ?, fuel_type = ?, inspection_until = ?, insurance_until = ?, ' +
+    'kasko_until = ?, emission_until = ?, permit_until = ?, tachograph_until = ?, ' +
+    'chassis_no = ?, model_year = ?, updated_at = ? WHERE id = ?'
+  ).run(v.plate, v.model, v.capacity, usable, v.fuelConsumption, v.fuelType,
+    v.inspectionUntil, v.insuranceUntil, v.kaskoUntil, v.emissionUntil, v.permitUntil,
+    v.tachographUntil, v.chassisNo, v.modelYear, d.nowIso(), id);
   return getVehicle(id);
 }
 

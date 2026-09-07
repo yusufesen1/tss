@@ -48,6 +48,17 @@ db.exec(`
     usable            INTEGER NOT NULL,
     fuel_consumption  REAL,
     fuel_type         TEXT NOT NULL DEFAULT 'dizel',
+    -- Türkiye'de kullanımdaki bir araç için takip edilen belge/işlem
+    -- geçerlilikleri. Hepsi opsiyonel ("YYYY-MM-DD" ya da NULL) —
+    -- bkz. server/store.js normalizeVehicleInput.
+    inspection_until  TEXT,
+    insurance_until   TEXT,
+    kasko_until       TEXT,
+    emission_until    TEXT,
+    permit_until      TEXT,
+    tachograph_until  TEXT,
+    chassis_no        TEXT,
+    model_year        INTEGER,
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
   );
@@ -78,6 +89,30 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_trips_approved_at ON trips (approved_at DESC);
 `);
 
+/* ---------- şema göçü ----------
+   CREATE TABLE IF NOT EXISTS var olan bir tabloya yeni kolon eklemez.
+   Bu yüzden sonradan eklenen kolonlar burada, veri kaybı olmadan
+   tamamlanıyor. Yeni kolon eklerken listeye bir satır eklemek yeterli. */
+function ensureColumns(table, columns) {
+  var existing = db.prepare('PRAGMA table_info(' + table + ')').all()
+    .map(function (c) { return c.name; });
+  columns.forEach(function (col) {
+    if (existing.indexOf(col.name) !== -1) return;
+    db.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + col.name + ' ' + col.type);
+  });
+}
+
+ensureColumns('vehicles', [
+  { name: 'inspection_until', type: 'TEXT' },
+  { name: 'insurance_until',  type: 'TEXT' },
+  { name: 'kasko_until',      type: 'TEXT' },
+  { name: 'emission_until',   type: 'TEXT' },
+  { name: 'permit_until',     type: 'TEXT' },
+  { name: 'tachograph_until', type: 'TEXT' },
+  { name: 'chassis_no',       type: 'TEXT' },
+  { name: 'model_year',       type: 'INTEGER' }
+]);
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -105,7 +140,16 @@ function vehicleFromRow(row) {
     capacity: row.capacity,
     usable: row.usable,
     fuelConsumption: row.fuel_consumption,
-    fuelType: row.fuel_type
+    fuelType: row.fuel_type,
+    // Belge/işlem geçerlilikleri — girilmemişse null
+    inspectionUntil: row.inspection_until || null,
+    insuranceUntil: row.insurance_until || null,
+    kaskoUntil: row.kasko_until || null,
+    emissionUntil: row.emission_until || null,
+    permitUntil: row.permit_until || null,
+    tachographUntil: row.tachograph_until || null,
+    chassisNo: row.chassis_no || null,
+    modelYear: row.model_year != null ? row.model_year : null
   };
 }
 

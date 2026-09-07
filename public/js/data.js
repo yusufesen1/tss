@@ -237,6 +237,65 @@
   // fuelConsumption/fuelType boş ya da geçersiz gelirse sessizce varsayılana
   // düşer (kapasite gibi sert bir zorunluluk değil — kullanıcı istediğinde
   // Araçlar tablosundan "Düzenle" ile daha isabetli bir değere günceller).
+  /* ---------- araç belge/işlem geçerlilikleri ----------
+     Türkiye'de kullanımdaki bir araç için takip edilen tarihler; hepsi
+     opsiyonel. Otomatik sorgulanamıyorlar (e-Devlet/TÜVTÜRK kişisel kimlik
+     doğrulaması istiyor, halka açık API yok) — elle girilip son kullanma
+     tarihi izleniyor.
+     DİKKAT: buradaki kurallar server/store.js'tekilerle BİREBİR aynı olmak
+     zorunda; ayrışırlarsa kullanıcı kaydı ekranda görür ama sunucu reddeder
+     (bkz. CLAUDE.md, TEKNIK-DOKUMAN §15). */
+  var VEHICLE_DATE_FIELDS = [
+    'inspectionUntil',   // Muayene (TÜVTÜRK)
+    'insuranceUntil',    // Zorunlu trafik sigortası (ZMSS)
+    'kaskoUntil',        // Kasko
+    'emissionUntil',     // Egzoz emisyon ölçümü
+    'permitUntil',       // Yetki belgesi (K belgesi)
+    'tachographUntil'    // Takograf kalibrasyonu
+  ];
+
+  function normalizeVehicleDate(value) {
+    var text = String(value == null ? '' : value).trim();
+    if (!text) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error('Tarih GG.AA.YYYY biçiminde olmalı.');
+    var parts = text.split('-');
+    var y = Number(parts[0]), m = Number(parts[1]), day = Number(parts[2]);
+    var dt = new Date(Date.UTC(y, m - 1, day));
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) {
+      throw new Error('Geçersiz tarih.');
+    }
+    return text;
+  }
+
+  function normalizeModelYear(value) {
+    var text = String(value == null ? '' : value).trim();
+    if (!text) return null;
+    var year = Number(text);
+    var current = new Date().getFullYear();
+    if (!isFinite(year) || year < 1950 || year > current + 1) {
+      throw new Error('Model yılı 1950 ile ' + (current + 1) + ' arasında olmalı.');
+    }
+    return Math.floor(year);
+  }
+
+  function normalizeChassisNo(value) {
+    var text = String(value == null ? '' : value).trim().toUpperCase();
+    if (!text) return null;
+    if (text.length > 20) throw new Error('Şasi no en fazla 20 karakter olabilir.');
+    return text;
+  }
+
+  // Araç nesnesine belge alanlarını uygular (ekleme ve güncelleme ortak yolu).
+  // patch'te bulunmayan alan DOKUNULMAZ — kısmi güncelleme desteklenir.
+  function applyVehicleDocuments(veh, patch, isNew) {
+    if (isNew || patch.chassisNo !== undefined) veh.chassisNo = normalizeChassisNo(patch.chassisNo);
+    if (isNew || patch.modelYear !== undefined) veh.modelYear = normalizeModelYear(patch.modelYear);
+    VEHICLE_DATE_FIELDS.forEach(function (f) {
+      if (isNew || patch[f] !== undefined) veh[f] = normalizeVehicleDate(patch[f]);
+    });
+    return veh;
+  }
+
   function normalizeFuelConsumption(raw) {
     var n = Number(raw);
     return (isFinite(n) && n > 0) ? n : DEFAULT_FUEL_CONSUMPTION;
@@ -259,6 +318,7 @@
       fuelConsumption: normalizeFuelConsumption(data.fuelConsumption),
       fuelType: normalizeFuelType(data.fuelType)
     };
+    applyVehicleDocuments(veh, data, true);
     state.vehicles.push(veh);
     save();
     return veh;
@@ -284,18 +344,29 @@
     save();
   }
 
+  // KISMİ güncelleme destekler: gönderilmeyen alan mevcut değerini korur.
+  // server/store.js'teki updateVehicle de böyle davranıyor — ikisi ayrışırsa
+  // kullanıcı değişikliği ekranda görür ama sunucu reddeder (bkz. CLAUDE.md).
+  // Bu, Araç Bilgileri modalının yalnızca belge alanlarını göndermesini
+  // mümkün kılıyor.
   function updateVehicle(id, data) {
     var veh = getVehicle(id);
     if (!veh) return null;
-    var cap = Number(data.capacity);
-    if (!String(data.plate || '').trim()) throw new Error('Plaka boş olamaz.');
-    if (!isFinite(cap) || cap < 1) throw new Error('Kapasite en az 1 palet olmalı.');
-    veh.plate = String(data.plate).trim().toUpperCase();
-    veh.model = String(data.model || '').trim();
-    veh.capacity = Math.floor(cap);
+
+    if (data.plate !== undefined) {
+      if (!String(data.plate || '').trim()) throw new Error('Plaka boş olamaz.');
+      veh.plate = String(data.plate).trim().toUpperCase();
+    }
+    if (data.capacity !== undefined) {
+      var cap = Number(data.capacity);
+      if (!isFinite(cap) || cap < 1) throw new Error('Kapasite en az 1 palet olmalı.');
+      veh.capacity = Math.floor(cap);
+    }
+    if (data.model !== undefined) veh.model = String(data.model || '').trim();
     veh.usable = Math.max(1, Math.min(veh.capacity, veh.usable));
     if (data.fuelConsumption !== undefined) veh.fuelConsumption = normalizeFuelConsumption(data.fuelConsumption);
     if (data.fuelType !== undefined) veh.fuelType = normalizeFuelType(data.fuelType);
+    applyVehicleDocuments(veh, data, false);
     save();
     return veh;
   }
