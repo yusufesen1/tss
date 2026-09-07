@@ -1,4 +1,4 @@
-# TSS — Rota ve Araç Atama Paneli
+# TSS — Rota Planlama Paneli
 
 Backend'siz, tarayıcıda çalışan sefer planlama arayüzü. `index.html` dosyasını çift tıklayarak açmak yeterli.
 
@@ -76,7 +76,7 @@ Kapasiteli tek araç sıralama problemi (TSP + pickup/delivery + zaman penceresi
 
 1. OSRM'den gerçek yol mesafe/süre matrisi çekilir.
 2. En yakın komşu ile başlangıç sıralaması kurulur.
-3. 2-opt ve Or-opt ile iyileştirilir; kapasite ihlalleri yüksek, erişim saati ihlalleri düşük ceza katsayısıyla bastırılır.
+3. 2-opt ve Or-opt ile iyileştirilir; kapasite ve erişim saati ihlalleri ikisi de eşit derecede yüksek ceza katsayısıyla bastırılır (uzun/ülke ölçeğindeki rotalarda erişim saati ihlalinin mesafeyle "satın alınabilmesini" önlemek için).
 4. 7 durağa kadar tam arama ile doğrulanır.
 
 Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita işaretçisinde belirtilir.

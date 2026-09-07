@@ -1,4 +1,4 @@
-# TSS — Rota ve Araç Atama Paneli — Teknik Doküman
+# TSS — Rota Planlama Paneli — Teknik Doküman
 
 Bu doküman, `README.md`'nin kısa kullanım kılavuzunun ötesine geçip projenin **çalışma
 prensibini, mimarisini, algoritmalarını ve teknik iç detaylarını** ayrıntılı biçimde
@@ -137,14 +137,14 @@ index.html          DOM iskeleti + script yükleme sırası
 styles.css           Tüm görsel tasarım (tasarım sistemi: bkz. "Turkish Support
                       Services — Design System.md")
 js/
-  data.js    (487 satır)  Veri modeli, localStorage, Excel satır normalizasyonu, TomTom key
+  data.js    (491 satır)  Veri modeli, localStorage, Excel satır normalizasyonu, TomTom key
   osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
   tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
-  optimizer.js (336 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
+  optimizer.js (367 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
   fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
   exporter.js (458 satır) Excel/PDF üretimi
-  app.js    (~1900 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
+  app.js    (~2260 satır) UI orkestrasyonu — en büyük dosya, diğer 7 modülü bağlar
 vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 ```
 
@@ -225,7 +225,7 @@ Alan detayları:
 `normalizeKey()` başlıkları küçük harfe çevirip Türkçe karakterleri sadeleştirir
 (`ı→i, ş→s, ğ→g, ü→u, ö→o, ç→c`) ve alfanümerik olmayanı siler — böylece
 "Enlem", "enlem ", "Lat", "latitude", "Y" gibi farklı başlık varyasyonları aynı
-alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:379-387`).
+alana eşlenir (`pick()` fonksiyonu, bkz. `data.js:369-377`).
 
 ---
 
@@ -340,10 +340,14 @@ yük kapasiteyi aşmasın diye izleniyor).
 #### `nearestNeighbor(ctx)` — başlangıç çözümü
 
 Klasik **tek başlangıçlı, açgözlü** (greedy) en-yakın-komşu sezgiseli:
-her adımda, o anki konumdan **gerçek yol mesafesine göre** en yakın ziyaret
-edilmemiş durağı seçer. Her zaman hareket noktasından (`index 0`) başlar —
-çoklu başlangıç denemesi (multi-start) yok, geri alma (backtracking) yok.
-Süre/trafik/zaman penceresi bu aşamada rol oynamaz, sadece mesafe.
+her adımda, o anki konumdan en yakın ziyaret edilmemiş durağı seçer. Her
+zaman hareket noktasından (`index 0`) başlar — çoklu başlangıç denemesi
+(multi-start) yok, geri alma (backtracking) yok. Trafik/zaman penceresi bu
+aşamada hiçbir zaman rol oynamaz. Hangi matrisin kullanılacağı `costMetric`'e
+bağlıdır: varsayılan `'distance'` modunda **gerçek yol mesafesi**
+matrisine, `'duration'` modunda ise **süre** matrisine göre en yakını seçer
+— aksi halde "En Az Süre" modunda bile başlangıç çözümü mesafeye göre
+kurulup 2-opt/Or-opt'un düzeltmesine kalırdı.
 
 > Koddaki `// Yükleme öncelikli...` yorumu **artık (vestigial)** — pickup/
 > delivery ayrımı skor hesabında fiilen kullanılmıyor, sadece mesafeye bakılıyor.
@@ -360,6 +364,12 @@ tekrar çağırdığı çekirdek fonksiyon:
   `legTime = durations[prev][idx] * trafficFactorAt(clock, ...)`.
 - Varış saati lokasyonun `from`'undan önceyse **açılışı bekler** (uyarı, ama
   ihlal değil); `until`'den sonraysa **zaman penceresi ihlali** sayılır.
+- **Gece yarısını saran erişim penceresi** (`from > until`, örn. 22:00–06:00)
+  ayrıca desteklenir: varış saati önce günün-saatine (time-of-day)
+  indirgenip `trafficFactorAt`'taki sarma mantığıyla pencere içinde mi diye
+  bakılır. Bu olmadan (varış birden fazla günü kapsayarak birikimli
+  ilerlediğinden, ör. "25:00" gibi) pencere içindeki bir varış hem "açılış
+  bekleniyor" hem "erişim saati aşıldı" olarak yanlış işaretlenirdi.
 - `pickup` → yük artar, kapasiteyi aşarsa **kapasite ihlali**;
   `delivery` → yük azalır, negatife düşerse yine ihlal.
 - Servis süresi (`serviceSec`) her durakta varışa eklenir.
@@ -373,8 +383,18 @@ tekrar çağırdığı çekirdek fonksiyon:
 baseCost = costMetric === 'duration' ? totalSeconds : totalDistance   // bkz. aşağı
 cost = baseCost
      + capacityViolations × 1e7   // PENALTY_CAPACITY — pratikte asla tercih edilmez
-     + timeViolations     × 5e5   // PENALTY_TIME     — mümkünse kaçınılır
+     + timeViolations     × 1e7   // PENALTY_TIME     — pratikte asla tercih edilmez
 ```
+
+> **Not:** `PENALTY_TIME` başlangıçta `5e5` (=500 km eşdeğeri) idi, ama
+> `costMetric:'distance'` iken `baseCost` METRE cinsinden olduğundan,
+> 500+ km'lik ülke ölçeğindeki rotalarda rakip bir sıralamanın kat ettiği
+> ekstra mesafe bu cezayı aşıp erişim saati ihlalli ama "kısa" bir rotayı,
+> ihlalsiz ama biraz daha uzun bir rotaya tercih ettirebiliyordu. Bu yüzden
+> `PENALTY_CAPACITY` ile aynı büyüklüğe (`1e7`) çekildi ki her ölçekteki
+> rotada kesinlikle kaçınılsın — artık kapasite ve erişim saati ihlalleri
+> **eşit derecede** ağır cezalandırılıyor (README'deki "Algoritma" bölümü
+> de bununla tutarlı).
 
 **`costMetric` — hangi büyüklük minimize ediliyor:** `'distance'`
 (varsayılan, önceki davranışla birebir aynı — en kısa km) veya `'duration'`
@@ -844,7 +864,7 @@ tabloyu **canlı** yeniden çizer.
 
 - **XSS koruması:** Lokasyon adı, plaka, model gibi kullanıcı/Excel
   kaynaklı veriler `innerHTML`'e yazılmadan önce **her yerde**
-  `escapeHtml()` ile kaçışlanıyor (`app.js:29-36`) — kötü niyetli bir isim
+  `escapeHtml()` ile kaçışlanıyor (`app.js:42-49`) — kötü niyetli bir isim
   (`<img onerror=...>` gibi) sayfada script çalıştıramaz.
 - **Veri güvenilirliği:** Tüm veri tarayıcı tarafında, tek kullanıcı
   bağlamında tutulduğu için sunucu tarafı yetkilendirme/doğrulama yok —
@@ -906,9 +926,10 @@ dahili/demo araç olarak kalabilir. İleride biri canlıya almaya karar verirse
 
 ---
 
-*Bu doküman, kod tabanının mevcut hali (2026-09-01 itibarıyla, TomTom canlı
-trafik entegrasyonu ve "En Az Süre" optimizasyon modu dahil) üzerinden elle
-incelenerek hazırlanmıştır/revize edilmiştir. Kaynak dosyalar değiştikçe
-güncel tutulmalıdır — özellikle §7/§8/§10.3'teki algoritma ve entegrasyon
-açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in birebir güncel
-haliyle senkron kalmalı.*
+*Bu doküman, kod tabanının mevcut hali (2026-09-07 itibarıyla, TomTom canlı
+trafik entegrasyonu, "En Az Süre" optimizasyon modu, eşitlenmiş kapasite/
+erişim saati ceza katsayıları ve gece yarısını saran erişim penceresi
+desteği dahil) üzerinden elle incelenerek hazırlanmıştır/revize edilmiştir.
+Kaynak dosyalar değiştikçe güncel tutulmalıdır — özellikle §7/§8/§10.3'teki
+algoritma ve entegrasyon açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in
+birebir güncel haliyle senkron kalmalı.*
