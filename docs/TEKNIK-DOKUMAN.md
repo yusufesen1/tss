@@ -22,7 +22,7 @@ anlatır. Hedef kitle: projeye sonradan dahil olacak / bakım yapacak geliştiri
 12. [Güvenlik notları](#12-güvenlik-notları)
 13. [Bilinen sınırlar ve production riskleri](#13-bilinen-sınırlar-ve-production-riskleri)
 14. [Devam edecek geliştiriciler için yol haritası](#14-devam-edecek-geliştiriciler-için-yol-haritası)
-15. [Backend (`server/`) — opsiyonel veri katmanı](#15-backend-server--opsiyonel-veri-katmanı)
+15. [Backend (`server/`) — veri katmanı](#15-backend-server--veri-katmanı)
 
 ---
 
@@ -169,67 +169,61 @@ teorik olarak Node.js'te de (tarayıcı olmadan) test edilebilir/çalıştırıl
 
 | Katman | Teknoloji | Not |
 |---|---|---|
-| Dil | Vanilla JavaScript (ES5 üslubu: `'use strict'`, `function` ifadeleri, IIFE) | Framework yok (React/Vue/Angular yok), build adımı yok, TypeScript yok |
-| Harita | [Leaflet](vendor/leaflet/leaflet.js) | `vendor/` altında yerel, CDN değil |
-| Harita karoları | OpenStreetMap tile sunucusu (`{s}.tile.openstreetmap.org`) | `public/js/app.js` içindeki `L.tileLayer` — internet bağımlılığı |
-| Rota/mesafe | [OSRM](https://project-osrm.org/) demo sunucusu (`router.project-osrm.org`) | `public/js/osrm.js` — internet bağımlılığı, bkz. §13. Sıralama kararının tek girdisi; her zaman çağrılır. |
-| Canlı trafik (opsiyonel) | [TomTom Routing API](https://developer.tomtom.com/routing-api) | `public/js/tomtom.js` — sadece "En Az Süre" modunda ve kullanıcı kendi API key'ini girdiyse çağrılır; ücretli/kotalı, anahtar gerektirir, bkz. §10.3 |
-| Hava durumu | [Open-Meteo](https://open-meteo.com/) API | Anahtar gerektirmez, ücretsiz — `public/js/weather.js` |
-| Yakıt fiyatı | Sunucu üzerinden ulusal ortalama (`GET /api/fuel-price`, 6 saatlik önbellek) | Anahtar gerektirmez; kaynak servis CORS'a kapalı olduğu için istek sunucudan yapılır, bkz. §10.4 |
-| Excel içe/dışa aktarma | [SheetJS (xlsx.full.min.js)](vendor/xlsx.full.min.js) | `vendor/` altında yerel |
-| PDF üretimi | [jsPDF](vendor/jspdf.umd.min.js) + [jspdf-autotable](vendor/jspdf.plugin.autotable.min.js) | Tablo + serbest metin/şekil çizimi |
-| Harita → görüntü | [html2canvas](vendor/html2canvas.min.js) | PDF'e harita gömmek için ekran görüntüsü alır |
-| PDF Türkçe font | `vendor/fonts/pdf-font-arial.js` | jsPDF'in gömülü Helvetica'sı `ı,ş,ğ,ç,ö,ü` içermediği için Arial TTF base64 olarak gömülü |
-| Yazı tipi (UI) | [Outfit](vendor/fonts/outfit.css) (woff2, yerel) | Google Fonts CDN değil |
-| Kalıcılık (kurulumsuz mod) | `localStorage` (tek anahtar: `tss-rota-panel-v1`, outbox: `tss-outbox-v1`) | Backend çalışmıyorsa tek kalıcılık katmanı |
-| Kalıcılık (ekip modu) | SQLite (`better-sqlite3`, tek dosya `server/data/tss.db`) | Gerçek veri kaynağı; `localStorage` önbelleğe düşer — bkz. §5.4, §15 |
-| Backend (opsiyonel) | Node.js + [Express](https://expressjs.com/) 5 | `server/index.js` — REST + statik sunum + `X-TSS-Token`; frontend ile aynı origin, CORS yok |
-| Test altyapısı | `server/scripts/` — 98 test (smoke 58 + sync 40), `cd server && npm test` | `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz, bkz. §13/§14 |
-| Build/bundler | **Yok** | Dosyalar doğrudan `<script>` ile sırayla yükleniyor; backend'de de derleme adımı yok |
+| Dil (her iki taraf) | Vanilla JavaScript, ES5 üslubu (`'use strict'`, `function` ifadeleri, IIFE) | Framework yok, build adımı yok, TypeScript yok — ne tarayıcıda ne sunucuda |
+| Backend | Node.js + Express 5 | `server/index.js` — REST + `public/` sunumu + `X-TSS-Token`; frontend'le aynı origin, CORS yapılandırması yok |
+| Kalıcılık | SQLite (`better-sqlite3`), tek dosya: `server/data/tss.db` | Gerçek veri kaynağı. Tarayıcıdaki `localStorage` (`tss-rota-panel-v1` + `tss-outbox-v1`) yalnızca önbellek/outbox — bkz. §5.4 |
+| Harita | Leaflet | `public/vendor/` altında yerel, CDN değil |
+| Harita karoları | OpenStreetMap (`{s}.tile.openstreetmap.org`) | `public/js/app.js` → `L.tileLayer` — internet bağımlılığı |
+| Rota/mesafe | [OSRM](https://project-osrm.org/) demo sunucusu | `public/js/osrm.js` — sıralama kararının tek girdisi, her zaman çağrılır. Demo sunucu riski: §13 |
+| Canlı trafik (opsiyonel) | [TomTom Routing API](https://developer.tomtom.com/routing-api) | Yalnızca "En Az Süre" modunda ve bir anahtar tanımlıysa. İstek **backend proxy'sinden** geçer, anahtar tarayıcıya inmez — §10.3, §12 |
+| Hava durumu | [Open-Meteo](https://open-meteo.com/) | Anahtarsız, ücretsiz — `public/js/weather.js`, tarayıcıdan doğrudan (CORS'a açık) |
+| Yakıt fiyatı | Ulusal ortalama, `GET /api/fuel-price` (6 saatlik önbellek) | Kaynak servis CORS'a kapalı olduğu için istek sunucudan yapılır — §10.4 |
+| Excel | SheetJS | İçe ve dışa aktarma; `public/vendor/` altında yerel |
+| PDF | jsPDF + jspdf-autotable + html2canvas | Tablo, serbest çizim, ve haritanın ekran görüntüsü — §11 |
+| PDF Türkçe font | `public/vendor/fonts/pdf-font-arial.js` | jsPDF'in gömülü Helvetica'sı `ı,ş,ğ,ç,ö,ü` içermiyor; Arial TTF base64 olarak gömülü |
+| Yazı tipi (UI) | Outfit (woff2, yerel) | Google Fonts CDN değil |
+| Test | `cd server && npm test` — smoke + sync | Kapsam: REST yüzeyi, doğrulama, outbox/dayanıklılık. `optimizer.js`/`fleet.js` ve arayüz akışları **testsiz** — §13/§14 |
+
+Üçüncü parti kütüphanelerin tamamı `public/vendor/` altında yereldir (CDN
+yok): panel internet olmadan da açılır, yalnızca harita karoları ve rota
+hesabı için dış erişim gerekir.
 
 ---
 
 ## 4. Dosya/modül yapısı
 
-```
-index.html          DOM iskeleti + script yükleme sırası
-styles.css           Tüm görsel tasarım (tasarım sistemi: bkz. "Turkish Support
-                      Services — Design System.md")
-js/
-  data.js    (895 satır)  Veri modeli, localStorage, Excel satır normalizasyonu,
-                           TomTom key + BACKEND SENKRONİZASYONU (outbox, bkz. §5.4)
-  osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
-  tomtom.js  (101 satır)  TomTom istemcisi — backend proxy'si varsa oradan, yoksa doğrudan
-  weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
-  fuelprice.js ( 76 satır) Yakıt fiyatı — GET /api/fuel-price (§10.4)
-  optimizer.js (367 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
-  fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
-  exporter.js (472 satır) Excel/PDF üretimi
-  app.js    (~2550 satır) UI orkestrasyonu — en büyük dosya, diğer 8 modülü bağlar
-vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
-server/               OPSİYONEL backend (Express + SQLite) — bkz. §15
-  index.js   (175 satır)  REST endpoint'leri, X-TSS-Token kontrolü, statik dosya sunumu
-  db.js      (174 satır)  SQLite şeması + satır ↔ frontend nesnesi dönüşümleri
-  store.js   (265 satır)  CRUD + doğrulama (public/js/data.js ile birebir aynı kurallar)
-  tomtom.js  (103 satır)  TomTom proxy'si — anahtar sunucuda kalır (§10.3, §12)
-  fuelprice.js ( 85 satır) Yakıt fiyatı, kaynaktan doğrudan + 6 saatlik önbellek (§10.4)
-  defaults.js ( 45 satır) public/js/data.js DEFAULT_* sabitlerinin kopyası (ilk tohumlama)
-  scripts/                localStorage içe aktarma + smoke (58) ve sync (40) testleri
-```
+Klasör ağacının kendisi README.md'de; burada her modülün **ne yaptığı** ve
+dışa ne verdiği anlatılıyor.
 
-### Dosya sorumlulukları (tek satır özet)
+### Tarayıcı — `public/js/`
 
 | Dosya | Export | Sorumluluk |
 |---|---|---|
-| `data.js` | `TSSData` | Tek gerçek veri kaynağı: lokasyon/araç/durak state'i, localStorage save/load, sefer geçmişi, trafik ayarları, TomTom API key, Excel içe aktarma normalizasyonu |
+| `data.js` | `TSSData` | Veri katmanı: bellekteki state, `localStorage` önbelleği, **backend senkronizasyonu + outbox** (§5.4), sefer geçmişi, ayarlar, Excel satır normalizasyonu. Dışa açılan tüm fonksiyonlar **senkron** — bu sözleşme kritiktir (§5.4) |
 | `osrm.js` | `TSSOsrm` | `matrix(points)` → mesafe/süre matrisi, `route(points)` → çizim geometrisi |
-| `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination, apiKey)` → canlı trafik dahil tekil bacak süresi/mesafesi/güzergahı (bkz. §10.3) |
+| `tomtom.js` | `TSSTomTom` | `routeLeg(origin, destination)` → canlı trafik dahil tekil bacak; istek backend proxy'sine gider, anahtar tarayıcıya inmez (§10.3) |
 | `weather.js` | `TSSWeather` | `checkPoints(points)` → uyarı listesi, `describePoint(...)` → tekil özet |
-| `fuelprice.js` | `TSSFuelPrice` | `fetchNational()` → sunucudan (`/api/fuel-price`) ulusal ortalama dizel/benzin fiyatı (best-effort, bkz. §10.4) |
-| `optimizer.js` | `TSSOptimizer` | `optimize(options)` → tek araç için en iyi durak sırası + zaman çizelgesi; `costMetric` ile mesafe ya da süre minimize edilir |
-| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği (filodaki hiçbir tek aracın kapasitesini aşan durakları birden fazla araca otomatik böler, bkz. §8.6); `replayGroup(...)` → elle düzenleme sonrası yeniden simülasyon; `replayGroupWithLiveLegs(...)` → TomTom'dan gelen canlı bacak verisiyle yeniden simülasyon |
-| `exporter.js` | `TSSExporter` | `toExcel`, `toPdf`, `toExcelHistory`, `toPdfHistory` |
-| `app.js` | (yok, global fonksiyonlar `init()` ile başlar) | DOM event binding, Leaflet haritası, tablo/modal render, tüm kullanıcı etkileşimi |
+| `fuelprice.js` | `TSSFuelPrice` | `fetchNational()` → sunucudan ulusal ortalama dizel/benzin fiyatı, best-effort (§10.4) |
+| `optimizer.js` | `TSSOptimizer` | `optimize(options)` → **tek araç** için en iyi durak sırası + zaman çizelgesi; `costMetric` ile mesafe ya da süre minimize edilir (§7) |
+| `fleet.js` | `TSSFleet` | `assignFleet(opts)` → hangi durağın hangi araca gideceği; tek araca sığmayan durakları böler (§8.6). `replayGroup(...)` elle düzenleme sonrası, `replayGroupWithLiveLegs(...)` canlı trafik verisiyle yeniden simülasyon (§8.5, §8.7) |
+| `exporter.js` | `TSSExporter` | `toExcel`, `toPdf`, `toExcelHistory`, `toPdfHistory` (§11) |
+| `app.js` | (yok — `init()` ile başlar) | DOM event binding, Leaflet haritası, tablo/modal render, tüm kullanıcı etkileşimi. En büyük dosya; diğer 8 modülü bağlar |
+
+### Sunucu — `server/`
+
+| Dosya | Sorumluluk |
+|---|---|
+| `index.js` | REST endpoint'leri, `X-TSS-Token` erişim kontrolü, `public/` statik sunumu |
+| `db.js` | SQLite şeması + satır ↔ frontend nesnesi dönüşümleri |
+| `store.js` | CRUD + doğrulama — kurallar `public/js/data.js` ile **birebir aynı olmak zorunda** (§15) |
+| `tomtom.js` | TomTom proxy'si; anahtar burada kalır, hata metinlerinde maskelenir (§10.3, §12) |
+| `fuelprice.js` | Yakıt fiyatını kaynaktan doğrudan çeker + 6 saatlik önbellek (§10.4) |
+| `defaults.js` | `public/js/data.js`'teki `DEFAULT_*` sabitlerinin kopyası — boş veritabanının ilk tohumlanması |
+| `scripts/` | `import-localstorage.js` (tek seferlik veri aktarımı), `smoke-test.js`, `sync-test.js` |
+
+> **Not:** Bu tablolarda bilerek satır sayısı verilmiyor — günler içinde eskiyip
+> dokümanı yanlış hale getiriyorlardı. Güncel sayılar için:
+> `wc -l public/js/*.js server/*.js`
 
 ---
 
@@ -244,7 +238,7 @@ state = {
   stops:     [ { id, locationId, type: 'pickup'|'delivery', pallets } ],
   plan:      null | { startLocation, isWeekend, groups:[...], warning, note },
   history:   [ { id, approvedAt, note, vehicles, vehicleSummary, start,
-                 departure, distance, duration, stopCount, groups } ],
+                 departure, distance, duration, fuelCost, stopCount, groups } ],
   traffic:   { enabled, applyRushHourOnWeekends,
                morning:{start,end,factor}, evening:{...}, night:{...} },
   tomtomApiKey: '',  // "En Az Süre" modunda canlı trafik için, bkz. §10.3
@@ -907,17 +901,21 @@ snowfall,temperature_2m&timezone=auto&forecast_days=2`
 
 ### 10.3 TomTom Routing API (`tomtom.js`) — opsiyonel canlı trafik
 
-| Fonksiyon | Endpoint | Kullanım |
-|---|---|---|
-| `routeLeg(origin, destination, apiKey)` | `GET /routing/1/calculateRoute/{lat,lng}:{lat,lng}/json?traffic=true&travelMode=car` | Tek bir bacak için canlı trafik dahil mesafe/süre/güzergah geometrisi |
+Çağrı zinciri iki adımlı — anahtar tarayıcıya hiç inmesin diye:
 
-`BASE = 'https://api.tomtom.com/routing/1/calculateRoute'`. OSRM'in aksine
-**varsayılan olarak kapalıdır**: sadece iki koşul birden sağlanınca devreye
-girer — (1) Optimizasyon metriği **"En Az Süre"** seçili, (2) Trafik
-Ayarları'ndan geçerli bir **TomTom API key** girilmiş. Her iki koşul da
-sağlanmazsa `tomtom.js` hiç çağrılmaz, uygulama tamamen OSRM'in tahmini
-üzerinden çalışmaya devam eder — bu yüzden özelliği hiç kullanmayan bir
-kurulum için davranış **birebir eskisiyle aynıdır**.
+| Katman | Çağrı | Not |
+|---|---|---|
+| `public/js/tomtom.js` | `routeLeg(origin, destination)` → `POST /api/tomtom/route-leg` | Anahtar yok; yalnızca koordinatlar ve `X-TSS-Token` gider |
+| `server/tomtom.js` | `GET https://api.tomtom.com/routing/1/calculateRoute/{lat,lng}:{lat,lng}/json?key=…&traffic=true&travelMode=car` | Anahtarı ekleyen taraf burası |
+
+Dönen şekil her iki katmanda da aynı:
+`{ distanceMeters, durationSeconds, trafficDelaySeconds, geometry }`.
+
+OSRM'in aksine **varsayılan olarak kapalıdır**: yalnızca iki koşul birden
+sağlanınca devreye girer — (1) Optimizasyon metriği **"En Az Süre"** seçili,
+(2) bir TomTom anahtarı tanımlı (aşağıdaki tabloya bkz.). Aksi halde
+`tomtom.js` hiç çağrılmaz ve uygulama tamamen OSRM'in tahmini üzerinden
+çalışır.
 
 **Neden n istek, n² değil:** Sıralama kararının kendisi hâlâ OSRM'in
 ücretsiz/sınırsız `matrix()`'inden çıkıyor (tüm nokta çiftleri). TomTom'a
@@ -1117,12 +1115,12 @@ tabloyu **canlı** yeniden çizer.
 
 ## 13. Bilinen sınırlar ve production riskleri
 
-*(README.md'deki "Bilinen sınırlar" ve "Devam edecek geliştiriciler için"
-bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
+README.md aynı sınırları kullanıcı diliyle listeler; buradaki tablo ayrıca
+**teknik sebebini** veriyor.
 
 | Sınır | Teknik sebep | Etkisi |
 |---|---|---|
-| OSRM halka açık demo sunucusu | `osrm.js`'teki sabit `BASE` | Canlıda rate-limit/SLA yokluğu — bkz. README §"Devam edecek geliştiriciler için" |
+| OSRM halka açık demo sunucusu | `public/js/osrm.js`'teki sabit `BASE` | Rate-limit ve SLA garantisi yok; sunucu yavaşlarsa/düşerse rota hesaplanamaz — §14 |
 | Sunucu tek makinede çalışır | Tek Express süreci + tek SQLite dosyası; yük dengeleme/yedeklilik yok | O makine kapalıysa panel yalnızca yerel önbellekle (son görülen veriyle) açılır, yeni veri gelmez; düzenlemeler outbox'ta bekler |
 | Ekip senkronizasyonu anlık değil | Sunucudan veri yalnızca açılışta (ve `syncFromRemote()` ile) çekiliyor; push/websocket yok | Başka bir cihazın değişikliği panel yenilenince görünür |
 | Çakışma politikası: son yazan kazanır | v1'de bilinçli sadelik (§5.4); şemada `updated_at` var ama kullanılmıyor | Aynı kaydı aynı anda düzenleyen iki kişiden biri diğerinin üzerine sessizce yazar |
@@ -1130,9 +1128,9 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Yasak güzergah kısıtı yok | OSRM demo sunucusu özel `exclude` profili desteklemiyor | Köprü/tonaj kısıtları rotaya yansımaz — sadece onay notuna elle yazılabilir |
 | Kümeleme kesin optimum değil | Sezgisel farthest-point seeding, tek geçiş | Çok sayıda dağınık durakta teorik en iyi bölüştürme garanti edilmez |
 | Büyük durak bölüştürme sezgiseldir, kesin optimum değil | `distributeBigStop()` en-yakın-kümeden-başlayarak açgözlü (greedy) doldurma yapar (bkz. §8.6), gerçek bir VRP çözücü değil | Nadir kombinasyonlarda (örn. `initialLoad` bir kümenin ihtiyacını tek başına her aracın kapasitesinin üstüne çıkarıyorsa, ya da tüm arzı sağlayan tek bir büyük yükleme normal boşaltmalardan coğrafi olarak uzaksa) hâlâ önlenebilir olmayan bir kalıntı ihlal görülebilir — filo toplamda yeterliyken bile. Algoritma bunu her zaman **mümkün olan en az** ihlale indirger ve `warning` alanında açıkça bildirir, ama sıfıra indirme garantisi yoktur |
-| Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
-| TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
-| Otomatik test **kısmen** var | `server/` ve `public/js/data.js` senkron katmanı için 98 test (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
+| Trafik verisi kısmen gerçek | Canlı trafik yalnızca "En Az Süre" modunda ve bir TomTom anahtarı tanımlıyken devreye girer (§10.3); **varsayılan mod "En Kısa Mesafe"** ve anahtar yoksa sabit zaman dilimi çarpanları kullanılır (§7.2) | Varsayılan ayarlarla süreler kaba tahmindir; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
+| TomTom best-effort | Anahtar yoksa ya da istek başarısız olursa (kota, ağ, proxy hatası) sessizce OSRM tahminine düşülür | "En Az Süre" seçili olsa bile sonuç OSRM'in statik tahmini olabilir; kullanıcı bunu yalnızca bir toast'tan anlar, tabloda ayrıca işaretlenmez |
+| Otomatik test **kısmen** var | `server/` ve `public/js/data.js` senkron katmanı test ediliyor (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
 | Yakıt fiyatı dış servise bağlı | Kaynak servis (UcuzYakıtBul) resmi bir API değil, sözleşmesi değişebilir (§10.4) | Servise ulaşılamazsa son bilinen fiyat (bayat da olsa) gösterilir; hiç veri yoksa kullanıcı Trafik Ayarları'ndan elle girer |
 | Yakıt tüketimi varsayılanı tahmini | `DEFAULT_VEHICLES.fuelConsumption` üreticinin karma çevrim ortalaması, gerçek/yüklü sahne verisi değil | Gerçek filo verisi (yakıt fişi) girilene kadar yakıt maliyeti tahmini olduğundan sapabilir — araç bazında Araçlar modalından elle düzeltilmesi önerilir |
 
@@ -1140,11 +1138,10 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 
 ## 14. Devam edecek geliştiriciler için yol haritası
 
-**✔ Tamamlandı — kalıcılığın backend'e taşınması (§15).** Bu maddenin
-kendisi (eski 2. sıra) uygulandı: `TSSData` arayüzü aynen korunarak
-opsiyonel bir Express + SQLite backend eklendi; `app.js`/`fleet.js`/
-`exporter.js`'te tek satır değişmedi, `app.js`'e yalnızca açılışta
-senkronizasyonu başlatan birkaç satır eklendi.
+**✔ Tamamlandı — kalıcılığın backend'e taşınması (§15).** `TSSData` arayüzü
+aynen korunarak Express + SQLite backend eklendi; `app.js`/`fleet.js`/
+`exporter.js`'teki çağrı noktalarının hiçbiri değişmedi, `app.js`'e yalnızca
+açılışta senkronizasyonu başlatan birkaç satır eklendi.
 
 Kalan öncelik sırası:
 
@@ -1174,7 +1171,7 @@ Kalan öncelik sırası:
 
 ---
 
-## 15. Backend (`server/`) — opsiyonel veri katmanı
+## 15. Backend (`server/`) — veri katmanı
 
 Ayrıntılı kurulum/çalıştırma ve endpoint tablosu için: **`server/README.md`**.
 Buradaki özet, mimari kararların gerekçesi:
@@ -1206,21 +1203,25 @@ Buradaki özet, mimari kararların gerekçesi:
 - **Mevcut veriyi taşıma:** `node server/scripts/import-localstorage.js
   <yedek.json>` — tarayıcı konsolundan alınan `tss-rota-panel-v1` içeriğini
   SQLite'a aktarır, tekrar çalıştırmak güvenlidir.
-- **Testler:** `cd server && npm test` → `smoke-test.js` (58 test: REST
-  yüzeyi, erişim kontrolü, doğrulama, ayar merge'i, geçmiş JSON round-trip'i)
-  ve `sync-test.js` (40 test: **gerçek `public/js/data.js`** Node içinde sahte
-  `window`/`localStorage` ile gerçek backend'e karşı — senkron sözleşme,
-  outbox, çevrimdışı davranış, sunucu erişilemezken önbellekle açılış).
+- **Testler** (`cd server && npm test`): `smoke-test.js` REST yüzeyini,
+  erişim kontrolünü, doğrulama kurallarını, ayar merge'ini ve geçmiş JSON
+  round-trip'ini kontrol eder. `sync-test.js` ise **gerçek
+  `public/js/data.js`'i** Node içinde sahte `window`/`localStorage` ile
+  gerçek backend'e karşı çalıştırır: senkron sözleşme, outbox, çevrimdışı
+  davranış ve sunucu erişilemezken önbellekle açılış.
 
 ---
 
-*Bu doküman, kod tabanının mevcut hali (2026-09-07 itibarıyla; TomTom canlı
-trafik entegrasyonu, "En Az Süre" optimizasyon modu, eşitlenmiş kapasite/
-erişim saati ceza katsayıları, gece yarısını saran erişim penceresi desteği
-ve **opsiyonel Express + SQLite backend'i (§5.4, §15)** dahil) üzerinden elle
-incelenerek hazırlanmıştır/revize edilmiştir. Kaynak dosyalar değiştikçe
-güncel tutulmalıdır — özellikle §7/§8/§10.3'teki algoritma ve entegrasyon
-açıklamaları `optimizer.js`/`fleet.js`/`tomtom.js`'in, §5.4/§15'teki
-senkronizasyon açıklamaları da `public/js/data.js`/`server/`'ın birebir güncel
-haliyle senkron kalmalı. `server/store.js`'teki doğrulama kuralları
-`public/js/data.js`'tekilerle eşleşmek zorundadır (§15).*
+*Bu doküman kod tabanının 2026-09-07 tarihli hali üzerinden elle incelenerek
+hazırlanmış/revize edilmiştir (Express + SQLite backend'e geçiş, TomTom
+proxy'si, `public/` + `docs/` klasör düzeni dahil).*
+
+**Senkron kalması gerekenler:** §7/§8 algoritma anlatımı ↔ `optimizer.js` /
+`fleet.js`; §5.4 ve §15 senkronizasyon anlatımı ↔ `public/js/data.js` /
+`server/`; §10 dış servisler ↔ ilgili istemci + proxy dosyaları. Ayrıca
+`server/store.js`'teki doğrulama kuralları `public/js/data.js`'tekilerle
+**eşleşmek zorundadır** (§15) — ikisi birlikte değiştirilmeli.
+
+**Bilerek yazılmayanlar:** dosya satır sayıları ve test adetleri. Bunlar
+günler içinde eskiyip dokümanı yanlış hale getiriyordu; güncel değerler için
+`wc -l public/js/*.js server/*.js` ve `npm test` çıktısına bakın.

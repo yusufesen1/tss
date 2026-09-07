@@ -55,8 +55,9 @@
     plan: null,         // hesaplanan rota sonucu
     history: [],        // onaylanan seferlerin kalıcı kaydı
     traffic: null,       // trafik katsayısı ayarları (kalıcı)
-    tomtomApiKey: '',    // "En Az Süre" modunda canlı trafik için — kullanıcı girer,
-                          // sadece bu tarayıcıda saklanır, koda hiç gömülmez
+    tomtomApiKey: '',    // "En Az Süre" modunda canlı trafik için. Anahtar sunucuda
+                          // (server/.env) tanımlıysa burası BOŞ kalır ve özellik yine
+                          // çalışır — doğru kontrol hasTomTomKey(), bkz. §10.3
     fuel: null            // { dizelPrice, benzinPrice } — elle girilmiş yakıt fiyatı override'ı
   };
 
