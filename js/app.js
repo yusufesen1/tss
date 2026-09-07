@@ -28,6 +28,9 @@
   // Ayarları > Yakıt bölümünden ELLE girdiği fiyat (D.getFuelPriceSettings())
   // her zaman bunun önüne geçer, bkz. effectiveFuelPrice().
   var autoFuelPrice = null;
+  // Sunucu erişim anahtarı modalı oturumda bir kez açılsın (kuyruktaki her
+  // başarısız istek için tekrar tekrar açılmasın).
+  var tokenPromptShown = false;
   // Sefer Geçmişi filtre paneli — modal her açıldığında sıfırlanmaz, sekme
   // içinde kalıcıdır (kullanıcı modalı kapatıp tekrar açsa filtre durur).
   var historyFilter = {
@@ -2213,6 +2216,17 @@
       D.setTomTomApiKey($('inpTomTomKey').value);
     });
 
+    // Sunucu erişim anahtarı (yalnızca backend'li kullanımda görünür)
+    $('btnSaveAppToken').addEventListener('click', function () {
+      D.setRemoteToken($('inpAppToken').value);
+      closeModal('modalToken');
+      tokenPromptShown = false;   // anahtar yine yanlışsa modal tekrar açılabilsin
+      D.syncFromRemote().then(function (ok) {
+        toast(ok ? 'Sunucuya bağlanıldı, veriler güncellendi.' : 'Sunucuya bağlanılamadı.',
+          ok ? 'success' : 'error');
+      });
+    });
+
     $('inpFuelDizel').addEventListener('change', function () {
       D.updateFuelPriceSettings({ dizelPrice: $('inpFuelDizel').value });
       renderFuelAutoHint();
@@ -2446,7 +2460,20 @@
         // Haritadaki çizili rotayı silmemek için yalnızca plan yokken.
         if (!D.state.plan) drawIdleMarkers();
       });
-      D.onSyncError(function (message) { toast(message, 'error'); });
+      D.onSyncError(function (message, kind) {
+        // Anahtar sorunu: sadece uyarı vermek yetmez, kullanıcıya anahtarı
+        // girebileceği yeri de açmalıyız (aksi halde panel sessizce yerel
+        // kopyada takılı kalırdı).
+        if (kind === 'auth') {
+          if (!tokenPromptShown) {
+            tokenPromptShown = true;
+            $('inpAppToken').value = D.getRemoteToken();
+            openModal('modalToken');
+          }
+          return;
+        }
+        toast(message, 'error');
+      });
       D.autoConfigureRemote();
     }
 

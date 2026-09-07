@@ -490,6 +490,28 @@
   </div>
 </div>
 
+<!-- ============ SUNUCU ERİŞİM ANAHTARI ============ -->
+<!-- Yalnızca panel bir sunucudan servis edilirken VE sunucu APP_TOKEN
+     istiyorken açılır. index.html çift tıklanarak açıldığında hiç görünmez. -->
+<div class="modal-backdrop" id="modalToken" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Sunucu Erişim Anahtarı</h3>
+      <button class="btn btn-neutral btn-sm" data-close-modal="modalToken">Kapat</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <label class="label" for="inpAppToken">Erişim anahtarı</label>
+        <input id="inpAppToken" class="input" type="password" autocomplete="off"
+          placeholder="Sunucuyu kuran kişiden alınan anahtar" />
+        <p class="hint">Ekip verisine (lokasyon, araç, sefer geçmişi) erişmek için gerekli.
+          Yalnızca bu tarayıcıda saklanır ve her istekte güvenli başlık olarak gönderilir.</p>
+      </div>
+      <button class="btn btn-primary btn-block" id="btnSaveAppToken">Kaydet ve bağlan</button>
+    </div>
+  </div>
+</div>
+
 <div class="startup-error" id="startupError" hidden></div>
 
 <div class="toast" id="toast" hidden></div>
