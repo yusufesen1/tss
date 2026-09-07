@@ -288,6 +288,35 @@ function run() {
     })
 
     .then(function () {
+      console.log('\n— rota olayları ucu —');
+      return api('POST', '/api/tomtom/incidents', { route: [[41.0, 29.0], [41.1, 29.1]] }, null)
+        .then(function (r) {
+          check('token olmadan 401', r.status === 401, 'status=' + r.status);
+        });
+    })
+    .then(function () {
+      return api('POST', '/api/tomtom/incidents', { route: [[41.0, 29.0]] }).then(function (r) {
+        check('tek noktalı rota 400 ile reddedilir', r.status === 400, 'status=' + r.status);
+        check('hata mesajı açıklayıcı', /rota geometrisi/i.test((r.body && r.body.error) || ''),
+          JSON.stringify(r.body));
+      });
+    })
+    .then(function () {
+      return api('POST', '/api/tomtom/incidents', {}).then(function (r) {
+        check('rota alanı eksikse 400', r.status === 400, 'status=' + r.status);
+      });
+    })
+    .then(function () {
+      // Anahtar yok (DB temizlendi, .env boş) → açıklayıcı 400
+      return api('POST', '/api/tomtom/incidents', { route: [[41.0, 29.0], [41.1, 29.1]] })
+        .then(function (r) {
+          check('anahtar yokken 400 ile açıklayıcı hata',
+            r.status === 400 && /anahtar/i.test((r.body && r.body.error) || ''),
+            'status=' + r.status + ' body=' + JSON.stringify(r.body));
+        });
+    })
+
+    .then(function () {
       console.log('\n— sunucu tarafı anahtar (.env) sızmamalı —');
       // server/tomtom.js env'i her çağrıda okuduğu için burada çalışma
       // anında ayarlamak, sunucuyu .env ile başlatmakla aynı etkiyi verir.

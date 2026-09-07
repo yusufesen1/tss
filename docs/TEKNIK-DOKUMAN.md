@@ -943,6 +943,41 @@ aralığı. Ayrı bir istek ya da coğrafi filtreleme gerekmez. Araç kartındak
 geldiyse gösterilir — OSRM tahminine düşülmüşse ölçülmüş bir gecikme
 olmadığından kart hiç çizilmez.
 
+#### 10.3.1 Rota üzerindeki olaylar (kaza / kapalı yol / çalışma)
+
+Yukarıdaki `jams` "ne kadar" sorusunu cevaplar; "neden" için ayrı bir uç var:
+
+| Katman | Çağrı |
+|---|---|
+| `public/js/tomtom.js` | `incidentsOnRoute(route)` → `POST /api/tomtom/incidents`, gövdede birleşik rota geometrisi |
+| `server/tomtom.js` | `GET traffic/services/5/incidentDetails?bbox=…&language=tr-TR&timeValidityFilter=present` |
+
+**Neden filtreleme sunucuda:** TomTom yalnızca **kutu (bbox)** sorgusu kabul
+eder; İstanbul ölçeğinde bu yüzlerce olay döndürür ve çoğu rotayla alakasızdır.
+Gerçek ölçüm: bir AHL → İHL rotasında kutuda **249 olay** tarandı, rotaya
+değen **20** tanesi döndü (~440 ms). Eleme sunucuda yapıldığı için kalan 229
+olay tarayıcıya hiç inmez.
+
+**Eleme yöntemi:** rota, düzlemsel yaklaşımla metreye çevrilir; her olayın
+geometrisindeki her nokta için rota poligonundaki en yakın doğru parçasına
+dik uzaklık hesaplanır (`distSqToSegment`), en küçüğü eşiğin (varsayılan
+**50 m**) altındaysa olay rotaya "değiyor" sayılır. Rotanın kutusuna bile
+uzak olan olaylar segment döngüsüne hiç girmez (ucuz ön eleme).
+
+> **Bilinen sınır — karşı şerit:** bölünmüş yolda gidiş ve dönüş şeritleri
+> ~20 m arayla geçtiğinden, uzaklık filtresi tek başına **karşı şeridi
+> ayıramaz**; ters yöndeki bir kaza da eşiğin içine düşebilir. Olayın
+> `from → to` alanları yönü metin olarak taşır ve arayüzde gösterilir, uyarı
+> bandının altındaki not da kullanıcıyı bu konuda uyarır. Bu bilinçli bir
+> denge: uyarı sürücüyü bilgilendirmek için, rotayı otomatik değiştirmek için
+> değil — yanlış pozitif, kaçırılan kazadan ucuzdur.
+
+Sonuçlar gecikmeye göre sıralanır, arayüzde ilk 6 tanesi gösterilir
+(`renderTrafficIncidents`, `public/js/app.js`); bandın altındaki not kalan
+olay sayısını ve eşiği bildirir. Hava durumu uyarılarıyla aynı felsefe:
+**rotayı asla değiştirmez**, yalnızca bilgilendirir; sorgu başarısız olursa
+sessizce atlanır.
+
 **Neden n istek, n² değil:** Sıralama kararının kendisi hâlâ OSRM'in
 ücretsiz/sınırsız `matrix()`'inden çıkıyor (tüm nokta çiftleri). TomTom'a
 sadece optimizer'ın **zaten belirlemiş olduğu** son sıradaki **ardışık**

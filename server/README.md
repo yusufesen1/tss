@@ -63,6 +63,7 @@ edilmez**).
 | PATCH | `/api/settings/fuel` | `updateFuelPriceSettings` |
 | PATCH | `/api/settings/tomtom-key` | `setTomTomApiKey` |
 | POST | `/api/tomtom/route-leg` | TomTom proxy'si — anahtar sunucuda kalır |
+| POST | `/api/tomtom/incidents` | Rota üzerindeki olaylar (kaza/kapalı yol); eleme sunucuda |
 | GET | `/api/fuel-price` | Ulusal ortalama yakıt fiyatı (6 saatlik önbellek) |
 
 Taslak duraklar (`stops`) ve hesaplanan `plan` **backend'e taşınmaz** —

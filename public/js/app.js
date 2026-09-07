@@ -1127,6 +1127,7 @@
     drawPlan(plan);
     renderPlanGroups(plan);
     checkWeather(plan);
+    checkTrafficIncidents(plan);
     renderFleetWarning(plan);
   }
 
@@ -1175,6 +1176,81 @@
       if (D.state.plan !== plan) return; // bu arada başka bir plan yapılmış olabilir
       renderWeatherWarnings(warnings);
     }).catch(function () { /* sessiz geç */ });
+  }
+
+  /* ---------- Rota üzerindeki trafik olayları ----------
+     Hava durumu uyarılarıyla aynı felsefe: rotayı ASLA değiştirmez, yalnızca
+     sürücünün bilmesi gerekeni üste yazar. Sorgu ve eleme sunucuda yapılır
+     (bkz. server/tomtom.js) — kutudan dönen yüzlerce olay tarayıcıya inmez. */
+  function checkTrafficIncidents(plan) {
+    var box = $('trafficWarnings');
+    box.hidden = true;
+    if (!TomTom || !TomTom.incidentsOnRoute || !D.hasTomTomKey()) return;
+
+    // Tüm grupların çizilmiş güzergahını tek bir çizgide birleştir
+    var route = [];
+    plan.groups.forEach(function (group) {
+      if (group.geometry && group.geometry.length) route = route.concat(group.geometry);
+    });
+    if (route.length < 2) return;
+
+    TomTom.incidentsOnRoute(route).then(function (result) {
+      if (D.state.plan !== plan) return;   // bu arada yeni bir plan yapılmış olabilir
+      renderTrafficIncidents(result);
+    })['catch'](function (err) {
+      // Best-effort: olay sorgusu başarısız olsa da plan kullanılabilir kalır
+      console.warn('[TSS] Trafik olayları alınamadı:', err.message || err);
+    });
+  }
+
+  function incidentLabel(inc) {
+    var where = [inc.from, inc.to].filter(Boolean).join(' → ');
+    var road = (inc.roadNumbers || []).join(', ');
+    if (road) where = road + (where ? ' · ' + where : '');
+    return where || inc.description || 'Konum belirtilmemiş';
+  }
+
+  function renderTrafficIncidents(result) {
+    var box = $('trafficWarnings');
+    box.querySelectorAll('.traffic-warning-item, .traffic-warnings-note')
+      .forEach(function (node) { node.remove(); });
+
+    var list = (result && result.incidents) || [];
+    if (!list.length) { box.hidden = true; return; }
+
+    // Uzun listeyi bandı şişirmeden göstermek için ilk 6 olay
+    list.slice(0, 6).forEach(function (inc) {
+      var row = document.createElement('p');
+      row.className = 'traffic-warning-item';
+
+      var kind = document.createElement('span');
+      kind.className = 'tw-kind';
+      kind.textContent = inc.category;
+      row.appendChild(kind);
+
+      var where = document.createElement('span');
+      where.textContent = incidentLabel(inc);
+      row.appendChild(where);
+
+      if (inc.delaySeconds > 0) {
+        var delay = document.createElement('span');
+        delay.className = 'tw-delay';
+        delay.textContent = '+' + durationLabel(inc.delaySeconds);
+        row.appendChild(delay);
+      }
+      box.appendChild(row);
+    });
+
+    var note = document.createElement('p');
+    note.className = 'traffic-warnings-note';
+    var extra = list.length > 6 ? ' (' + (list.length - 6) + ' olay daha)' : '';
+    // Karşı şerit uyarısı bilinçli: uzaklık filtresi bölünmüş yolda gidiş ve
+    // dönüşü ayıramaz, bkz. server/tomtom.js başındaki not.
+    note.textContent = 'Rota çizgisine ' + result.thresholdMeters + ' m yakınlıktaki olaylar' +
+      extra + '. Karşı şeritteki olaylar da listeye girebilir — yönü kontrol edin.';
+    box.appendChild(note);
+
+    box.hidden = false;
   }
 
   function renderWeatherWarnings(warnings) {
@@ -1242,6 +1318,8 @@
       drawPlan(plan);
       renderPlanGroups(plan);
       checkWeather(plan);
+      // Sıra değiştiği için güzergah da değişti — olay listesi tazelenmeli.
+      checkTrafficIncidents(plan);
       renderStops();
       updateCapacity();
       setLoading(false);
@@ -1625,6 +1703,7 @@
     el.planGroups.innerHTML = '';
     el.tableEmpty.hidden = false;
     $('weatherWarnings').hidden = true;
+    $('trafficWarnings').hidden = true;
     el.fleetWarning.hidden = true;
     el.btnApproveRoute.disabled = true;
     el.btnCompare.disabled = true;

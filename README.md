@@ -163,6 +163,10 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
 - **Ekip senkronizasyonu anlık değil:** backend kullanılırken başka bir cihazın
   yaptığı değişiklik, panel yenilendiğinde (sayfa açılışında) gelir — canlı
   push/websocket yok. Aynı kaydı iki kişi aynı anda düzenlerse son yazan kazanır.
+- **Trafik olayı uyarıları karşı şeridi ayıramaz:** rota üzerindeki kaza/kapalı
+  yol uyarıları, olayın rota çizgisine uzaklığına göre seçilir. Bölünmüş yolda
+  gidiş ve dönüş ~20 m arayla geçtiği için ters yöndeki bir olay da listeye
+  girebilir — uyarıdaki yön bilgisini ("X → Y") kontrol edin.
 - **Taslak duraklar ve hesaplanan plan paylaşılmaz:** backend'e hiç gitmez,
   sayfa yenilenince sıfırlanır (bilinçli — "o anki taslak sefer" kalıcı olmamalı).
 - PDF'e harita gömme tarayıcı güvenlik kısıtlarına takılırsa rapor tablo ile üretilir ve durum PDF üzerinde belirtilir.

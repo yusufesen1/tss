@@ -87,6 +87,19 @@ app.post('/api/tomtom/route-leg', function (req, res) {
   });
 });
 
+// Rota üzerindeki olaylar (kaza/kapalı yol/çalışma). Gövde rota geometrisini
+// taşır; filtreleme sunucuda yapılır, böylece kutudan dönen yüzlerce olay
+// tarayıcıya hiç inmez (bkz. server/tomtom.js).
+app.post('/api/tomtom/incidents', function (req, res) {
+  var body = req.body || {};
+  tomtom.incidentsOnRoute(body.route, body.thresholdMeters).then(function (result) {
+    res.json(result);
+  }, function (err) {
+    var status = err && err.status ? err.status : 502;
+    res.status(status).json({ error: (err && err.message) || 'Olay sorgusu başarısız.' });
+  });
+});
+
 /* ---------------- Yakıt fiyatı (CORS'suz, sunucu tarafından) ---------------- */
 
 app.get('/api/fuel-price', function (req, res) {
