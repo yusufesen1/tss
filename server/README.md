@@ -16,8 +16,9 @@ Sonra tarayıcıda `http://localhost:3000`. Aynı ağdaki diğer cihazlar
 `http://<bu-makinenin-ip'si>:3000` ile bağlanır (sunucu `0.0.0.0`'a
 bind eder; `.env`'de `HOST=127.0.0.1` yaparsanız yalnızca bu makine).
 
-Statik dosyalar (`index.html`, `js/`, `styles.css`, `vendor/`) da bu
-sunucudan servis edilir — API ile aynı origin, dolayısıyla CORS yok.
+`public/` altındaki statik dosyalar (index.html, styles.css, js/, vendor/,
+assets/) da bu sunucudan servis edilir — API ile aynı origin, dolayısıyla
+CORS yapılandırması gerekmez.
 
 ## Mevcut tarayıcı verisini aktarma (tek seferlik)
 
@@ -45,7 +46,7 @@ Tüm `/api/*` istekleri, `.env`'de `APP_TOKEN` tanımlıysa
 `X-TSS-Token` header'ı ister (URL query string'inde token **kabul
 edilmez**).
 
-| Metot | Yol | Karşılığı (js/data.js) |
+| Metot | Yol | Karşılığı (public/js/data.js) |
 |---|---|---|
 | GET | `/api/ping` | — (token/erişim kontrolü) |
 | GET | `/api/bootstrap` | `load()` — locations, vehicles, history, traffic, fuel, tomtomApiKey |

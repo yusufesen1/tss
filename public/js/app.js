@@ -699,10 +699,9 @@
         // kullanılabilir (istek backend proxy'sinden gider) — bu yüzden
         // kontrol hasTomTomKey() ile yapılıyor.
         if (!D.hasTomTomKey()) return plan; // key hiç yok: sessizce OSRM ile devam
-        var apiKey = D.getTomTomApiKey();
 
         setLoading(true, 'Canlı trafik verisi alınıyor (TomTom)…');
-        return Promise.all(plan.groups.map(function (group) { return refineGroupWithLiveTraffic(plan, group, apiKey); }))
+        return Promise.all(plan.groups.map(function (group) { return refineGroupWithLiveTraffic(plan, group); }))
           .then(function (outcomes) {
             if (outcomes.some(function (ok) { return !ok; })) {
               toast('TomTom canlı trafik verisine ulaşılamadı (kota/bağlantı) — OSRM tahminleriyle devam edildi.', 'error');
@@ -837,7 +836,6 @@
     var otherMetric = otherCostMetric(activeMetric);
     var otherAssignment = computeMetricAssignment(otherMetric);
 
-    var apiKey = D.getTomTomApiKey();   // sunucu tarafı anahtarda boş kalır, bkz. hasTomTomKey
     var needsTomTom = otherMetric === 'duration' && D.hasTomTomKey() && !!TomTom;
 
     if (!needsTomTom) {
@@ -849,7 +847,7 @@
     setLoading(true, 'Karşılaştırma için canlı trafik verisi alınıyor (TomTom)…');
     var pseudoPlan = { startLocation: lastPlanningContext.startLocation };
     Promise.all(otherAssignment.groups.map(function (g) {
-      return refineGroupWithLiveTraffic(pseudoPlan, g, apiKey);
+      return refineGroupWithLiveTraffic(pseudoPlan, g);
     })).then(function (outcomes) {
       setLoading(false);
       if (outcomes.some(function (ok) { return !ok; })) {
@@ -958,14 +956,14 @@
   // vazgeçilir ve OSRM'in zaten hesaplamış olduğu sonuç/geometri aynen kalır
   // — projenin "kısıt sağlanamasa da her zaman bir rota üret" felsefesiyle
   // tutarlı. Dönüş değeri: true = TomTom verisiyle güncellendi, false = OSRM'de kaldı.
-  function refineGroupWithLiveTraffic(plan, group, apiKey) {
+  function refineGroupWithLiveTraffic(plan, group) {
     if (!TomTom) return Promise.resolve(false);
 
     var ordered = [plan.startLocation]
       .concat(group.result.orderedNodes.map(function (n) { return n.location; }));
     var legPromises = [];
     for (var i = 1; i < ordered.length; i++) {
-      legPromises.push(TomTom.routeLeg(ordered[i - 1], ordered[i], apiKey));
+      legPromises.push(TomTom.routeLeg(ordered[i - 1], ordered[i]));
     }
 
     return Promise.all(legPromises).then(function (legs) {
@@ -2464,52 +2462,52 @@
       return;
     }
 
-    // Backend (varsa): sayfa bir sunucudan servis ediliyorsa devreye girer,
-    // index.html çift tıklanarak açıldıysa hiç çalışmaz ve panel eskisi gibi
-    // yalnızca localStorage ile çalışır. Yakıt fiyatındaki desenin aynısı:
-    // arka planda, hiçbir şeyi bloke etmeden — ekran önce yerel önbellekten
-    // çizilir, sunucu verisi gelince sessizce tazelenir.
-    if (D.autoConfigureRemote) {
-      D.onRemoteSync(function () {
-        refreshSelects();
-        renderStops();
-        renderLocationTable();
-        renderVehicleTable();
-        renderHistoryTable();
-        updateCapacity();
-        // Trafik/yakıt formu açıkken yeniden çizilirse kullanıcının o an
-        // yazdığı değer ezilir — modal kapalıyken tazelemek yeterli.
-        if ($('modalTraffic') && $('modalTraffic').hidden) renderTrafficSettings();
-        // Haritadaki çizili rotayı silmemek için yalnızca plan yokken.
-        if (!D.state.plan) drawIdleMarkers();
-      });
-      // TomTom ve yakıt fiyatı isteklerini de backend üzerinden geçir:
-      // TomTom anahtarı sunucuda kalır (tarayıcıya inmez), yakıt fiyatı
-      // ise GitHub Actions dolambacı olmadan doğrudan kaynaktan gelir.
-      var tokenGetter = function () { return D.getRemoteToken(); };
-      if (TomTom && TomTom.setProxy) {
-        TomTom.setProxy({ url: '/api/tomtom/route-leg', getToken: tokenGetter });
-      }
-      if (FuelPrice && FuelPrice.setProxy) {
-        FuelPrice.setProxy({ url: '/api/fuel-price', getToken: tokenGetter });
-      }
-
-      D.onSyncError(function (message, kind) {
-        // Anahtar sorunu: sadece uyarı vermek yetmez, kullanıcıya anahtarı
-        // girebileceği yeri de açmalıyız (aksi halde panel sessizce yerel
-        // kopyada takılı kalırdı).
-        if (kind === 'auth') {
-          if (!tokenPromptShown) {
-            tokenPromptShown = true;
-            $('inpAppToken').value = D.getRemoteToken();
-            openModal('modalToken');
-          }
-          return;
-        }
-        toast(message, 'error');
-      });
-      D.autoConfigureRemote();
+    // Panel sunucudan servis edilmek üzere tasarlandı (bkz. server/README.md).
+    // Dosya çift tıklanarak (file://) açılırsa API çağrılarının hiçbiri
+    // çalışmaz — sessizce bozuk bir arayüz göstermek yerine ne yapılması
+    // gerektiğini açıkça söylüyoruz.
+    if (location.protocol === 'file:') {
+      showStartupError('Bu panel sunucu üzerinden çalışır. Terminalde "cd server && npm start" ' +
+                       'çalıştırıp http://localhost:3000 adresini açın.');
     }
+
+    // Veri katmanı: ekran önce yerel önbellekten çizilir, sunucudan gelen
+    // güncel veri gelince sessizce tazelenir — hiçbir şeyi bloke etmez.
+    D.onRemoteSync(function () {
+      refreshSelects();
+      renderStops();
+      renderLocationTable();
+      renderVehicleTable();
+      renderHistoryTable();
+      updateCapacity();
+      // Trafik/yakıt formu açıkken yeniden çizilirse kullanıcının o an
+      // yazdığı değer ezilir — modal kapalıyken tazelemek yeterli.
+      if ($('modalTraffic') && $('modalTraffic').hidden) renderTrafficSettings();
+      // Haritadaki çizili rotayı silmemek için yalnızca plan yokken.
+      if (!D.state.plan) drawIdleMarkers();
+    });
+
+    // TomTom ve yakıt fiyatı istekleri de backend üzerinden geçer; bu
+    // modüllere yalnızca erişim anahtarını nasıl okuyacaklarını söylüyoruz.
+    var tokenGetter = function () { return D.getRemoteToken(); };
+    if (TomTom && TomTom.configure) TomTom.configure({ getToken: tokenGetter });
+    if (FuelPrice && FuelPrice.configure) FuelPrice.configure({ getToken: tokenGetter });
+
+    D.onSyncError(function (message, kind) {
+      // Anahtar sorunu: sadece uyarı vermek yetmez, kullanıcıya anahtarı
+      // girebileceği yeri de açmalıyız (aksi halde panel sessizce yerel
+      // kopyada takılı kalırdı).
+      if (kind === 'auth') {
+        if (!tokenPromptShown) {
+          tokenPromptShown = true;
+          $('inpAppToken').value = D.getRemoteToken();
+          openModal('modalToken');
+        }
+        return;
+      }
+      toast(message, 'error');
+    });
+    D.connectRemote();
 
     // Otomatik yakıt fiyatı: en iyi çaba, arka planda — hiçbir şeyi
     // bloke etmez, başarısız olursa kullanıcı elle girer (bkz. fuelprice.js).

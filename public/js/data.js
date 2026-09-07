@@ -753,11 +753,10 @@
     return syncFromRemote();
   }
 
-  // Sayfa bir sunucudan servis ediliyorsa (file:// değilse) backend vardır
-  // varsayımı: çift tıklayarak açma senaryosu eskisi gibi çalışmaya devam eder.
-  function autoConfigureRemote() {
-    if (typeof location === 'undefined') return Promise.resolve(false);
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return Promise.resolve(false);
+  // Panelin servis edildiği sunucuya (aynı origin) bağlanır — js/app.js
+  // init() sırasında bir kez çağırır. Backend bu projenin asıl veri
+  // kaynağıdır; localStorage yalnızca açılış önbelleği ve outbox tamponudur.
+  function connectRemote() {
     return configureRemote({ baseUrl: '' });
   }
 
@@ -883,7 +882,7 @@
 
     // --- backend katmanı (çağrılmazsa data.js eski haliyle çalışır) ---
     configureRemote: configureRemote,
-    autoConfigureRemote: autoConfigureRemote,
+    connectRemote: connectRemote,
     syncFromRemote: syncFromRemote,
     onRemoteSync: onRemoteSync,
     onSyncError: onSyncError,

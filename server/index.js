@@ -5,9 +5,9 @@
    Sonra:       http://localhost:3000
    LAN'daki diğer cihazlar: http://<bu-makinenin-ip'si>:3000
 
-   Statik dosyalar (index.html, js/, styles.css, vendor/) da buradan
-   servis edilir — böylece frontend ile API aynı origin'de olur, CORS
-   gerekmez.
+   public/ altındaki statik dosyalar (index.html, styles.css, js/, vendor/,
+   assets/) da buradan servis edilir — frontend ile API aynı origin'de
+   olduğu için CORS yapılandırması gerekmez.
 
    Erişim kontrolü: /api/* istekleri X-TSS-Token header'ı ile korunur
    (bkz. auth middleware). Bu tam bir authentication sistemi DEĞİL,
@@ -153,9 +153,10 @@ app.patch('/api/settings/tomtom-key', function (req, res) {
 });
 
 /* ---------------- statik frontend ----------------
-   Proje kökü (server/ klasörünün bir üstü) doğrudan servis edilir. */
-var ROOT = path.join(__dirname, '..');
-app.use(express.static(ROOT, { extensions: ['html'] }));
+   Tarayıcıya giden her şey public/ altında toplanmıştır
+   (index.html, styles.css, js/, vendor/, assets/). */
+var PUBLIC_DIR = path.join(__dirname, '..', 'public');
+app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 
 /* ---------------- başlat ---------------- */
 
@@ -163,7 +164,7 @@ if (require.main === module) {
   var seeded = store.seedIfEmpty();
   if (seeded.locations || seeded.vehicles) {
     console.log('[TSS] Boş veritabanı tohumlandı: ' +
-      seeded.locations + ' lokasyon, ' + seeded.vehicles + ' araç (js/data.js varsayılanları).');
+      seeded.locations + ' lokasyon, ' + seeded.vehicles + ' araç (public/js/data.js varsayılanları).');
   }
   app.listen(PORT, HOST, function () {
     console.log('[TSS] Backend hazır: http://localhost:' + PORT + '  (bind: ' + HOST + ':' + PORT + ')');

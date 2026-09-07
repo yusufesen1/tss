@@ -12,7 +12,7 @@
        otomatik gönderiliyor mu
      - sunucudan gelen veri state'e uygulanıp onRemoteSync tetikleniyor mu
      - bekleyen yazma varken sunucu verisi yerel veriyi EZMİYOR mu
-     - backend yapılandırılmazsa data.js eski haliyle mi çalışıyor
+     - sunucu erişilemezken panel yerel önbellekle açılıyor mu
 
    Çalıştırma:  cd server && npm run sync-test
    ========================================================= */
@@ -74,7 +74,7 @@ function installBrowserGlobals() {
 }
 
 function loadDataJs() {
-  var src = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'data.js'), 'utf8');
+  var src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'js', 'data.js'), 'utf8');
   // data.js bir IIFE: (function (global) { ... })(window)
   (0, eval)(src);
   return global.TSSData;
@@ -235,30 +235,49 @@ function run(D) {
     });
 }
 
-/* ---------- backend'siz mod (regresyon güvencesi) ---------- */
+/* ---------- sunucuya ulaşılamıyorken açılış (dayanıklılık) ----------
+   Backend artık asıl veri kaynağı, ama sunucu geçici olarak erişilemezse
+   (kapalı, ağ kopuk) panel kilitlenmemeli: yerel önbellekten çizilmeli ve
+   yapılan değişiklikler outbox'ta birikip bağlantı gelince gitmeli. */
 
-function runWithoutBackend() {
-  console.log('\n— backend YAPILANDIRILMAZSA (file:// senaryosu) —');
+function runWithServerDown() {
+  console.log('\n— sunucu ERİŞİLEMEZKEN açılış (dayanıklılık) —');
   delete global.TSSData;
-  global.localStorage = makeLocalStorage();
-  global.location = { protocol: 'file:' };
-  var fetchCalls = 0;
-  global.fetch = function () { fetchCalls++; return Promise.reject(new Error('olmamalı')); };
 
-  var src = fs.readFileSync(path.join(__dirname, '..', '..', 'js', 'data.js'), 'utf8');
+  // Önceki oturumdan kalmış bir önbellek taklidi (kullanıcı daha önce
+  // paneli açmış, veriler localStorage'a yazılmış)
+  var cached = makeLocalStorage();
+  cached.setItem('tss-rota-panel-v1', JSON.stringify({
+    locations: [{ id: 'loc-cache', name: 'Önbellekten Gelen', lat: 41, lng: 29, from: '00:00', until: '23:59' }],
+    vehicles: [{ id: 'veh-cache', plate: '34 CACHE 01', model: '', capacity: 3, usable: 3, fuelConsumption: 7, fuelType: 'dizel' }],
+    history: [], traffic: null, tomtomApiKey: '', fuel: null
+  }));
+  global.localStorage = cached;
+
+  var attempted = 0;
+  global.fetch = function () { attempted++; return Promise.reject(new Error('sunucu kapalı (test)')); };
+
+  var src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'js', 'data.js'), 'utf8');
   (0, eval)(src);
   var D2 = global.TSSData;
   D2.load();
 
-  return D2.autoConfigureRemote().then(function (result) {
-    check('file:// altında backend devreye girmiyor', result === false, 'result=' + result);
-    check('isRemoteEnabled false', D2.isRemoteEnabled() === false);
-    var loc = D2.addLocation({ name: 'Yerel Mod', lat: 40, lng: 29 });
-    check('yazma yine senkron çalışıyor', !!(loc && loc.id));
-    check('varsayılan veriler yükleniyor', D2.state.locations.length >= 6);
-    check('hiç ağ isteği yapılmadı', fetchCalls === 0, 'fetch çağrısı=' + fetchCalls);
-    check('localStorage\'a yazıldı',
-      (localStorage.getItem('tss-rota-panel-v1') || '').indexOf('Yerel Mod') !== -1);
+  check('önbellekteki lokasyon anında görünüyor',
+    D2.state.locations.some(function (l) { return l.id === 'loc-cache'; }));
+  check('önbellekteki araç anında görünüyor', D2.totalFleetCapacity() === 3);
+
+  return D2.connectRemote().then(function (ok) {
+    check('sunucu kapalıyken connectRemote false döner (panel yine açılır)', ok === false, 'ok=' + ok);
+    check('bağlanma denendi', attempted > 0, 'deneme=' + attempted);
+    check('önbellek verisi silinmedi',
+      D2.state.locations.some(function (l) { return l.id === 'loc-cache'; }));
+
+    var loc = D2.addLocation({ name: 'Sunucu Kapalıyken Eklendi', lat: 40, lng: 29 });
+    check('sunucu kapalıyken de yazma senkron çalışıyor', !!(loc && loc.id));
+    check('değişiklik outbox\'ta bekliyor', D2.pendingSyncCount() > 0,
+      'kuyruk=' + D2.pendingSyncCount());
+    check('yerel önbelleğe yazıldı',
+      (cached.getItem('tss-rota-panel-v1') || '').indexOf('Sunucu Kapalıyken Eklendi') !== -1);
   });
 }
 
@@ -276,7 +295,7 @@ var server = app.listen(0, '127.0.0.1', function () {
 
   D.configureRemote({ baseUrl: baseUrl, token: '' })
     .then(function () { return run(D); })
-    .then(function () { return runWithoutBackend(); })
+    .then(function () { return runWithServerDown(); })
     ['catch'](function (err) {
       failed++;
       console.error('\nBEKLENMEYEN HATA:', err);

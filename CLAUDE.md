@@ -1,36 +1,39 @@
 # TSS — Rota Planlama Paneli
 
 Araç filosu için sefer/rota planlama aracı. Derinlemesine mimari/algoritma
-anlatımı için **README.md** (kullanım) ve **TEKNIK-DOKUMAN.md** (mimari,
+anlatımı için **README.md** (kullanım) ve **docs/TEKNIK-DOKUMAN.md** (mimari,
 algoritmalar, dış servisler) dosyalarına bak — burada onları tekrar etmiyorum,
 sadece Claude'un bu projede çalışırken bilmesi gereken kısayolları yazıyorum.
 
 ## En kritik kural
 
-`js/data.js`'in dışa açtığı `window.TSSData` fonksiyonları (`addLocation`,
+`public/js/data.js`'in dışa açtığı `window.TSSData` fonksiyonları (`addLocation`,
 `updateVehicle`, `approveTrip`, `getHistory` vb.) **senkron kalmalı** —
-`js/app.js` içinde bunlara 60'tan fazla çağrı noktası var ve hiçbiri async
+`public/js/app.js` içinde bunlara 60'tan fazla çağrı noktası var ve hiçbiri async
 bekleyecek şekilde yazılmadı (sonucu aynı satırda kullanıyorlar). Backend
 entegrasyonu bile bu sözleşmeyi bozmadan, bir "yerel-öncelikli cephe"
-üzerinden yapılıyor (bkz. `C:\Users\yusuf\.claude\plans\greedy-mapping-blum.md`
-ve/veya `server/README.md` varsa). **`TSSData` fonksiyon imzalarını asenkron
+üzerinden yapılıyor (ayrıntı: `docs/TEKNIK-DOKUMAN.md` §5.4).
+**`TSSData` fonksiyon imzalarını asenkron
 yapma, dönüş şeklini değiştirme, ya da app.js'teki çağrı noktalarını
 "düzeltmek" için es geçme** — bu, en çok kırılma riski taşıyan yer.
 
 ## Çalıştırma
 
-- **Frontend-only (bugünkü hal):** `index.html` çift tıkla, backend gerekmez.
-- **Backend ile (varsa `server/` klasörü):** `cd server && npm install && node index.js`,
-  sonra `http://localhost:PORT` aç. Deploy gerekmez, LAN'daki diğer cihazlar
-  `http://<makine-ip>:PORT` ile bağlanabilir (backend `0.0.0.0`'a bind eder).
+`cd server && npm install && npm start`, sonra `http://localhost:3000`.
+Backend hem API'yi hem `public/` altındaki frontend'i servis eder — panel
+**yalnızca** bu şekilde çalışır (`file://` ile açılırsa hata bandı gösterir).
+Deploy gerekmez; LAN'daki diğer cihazlar `http://<makine-ip>:3000` ile
+bağlanır (sunucu `0.0.0.0`'a bind eder).
 
-## Script yükleme sırası (`index.html`)
+Testler: `cd server && npm test` (smoke + sync).
 
-`js/*.js` dosyaları global `window.TSSxxx` nesneleri export eden IIFE'ler,
+## Script yükleme sırası (`public/index.html`)
+
+`public/js/*.js` dosyaları global `window.TSSxxx` nesneleri export eden IIFE'ler,
 modül sistemi yok — sıra önemli:
 `data → osrm → tomtom → weather → fuelprice → optimizer → fleet → exporter → app`.
-Yeni bir `js/*.js` dosyası eklerken bu sıraya (bağımlı olduğu modülden sonra)
-uy, `index.html`'in script bloğuna ekle.
+Yeni bir `public/js/*.js` dosyası eklerken bu sıraya (bağımlı olduğu modülden sonra)
+uy, `public/index.html`'in script bloğuna ekle.
 
 ## Kod stili
 
@@ -47,7 +50,7 @@ uy, `index.html`'in script bloğuna ekle.
 
 ## Doküman senkronu
 
-README.md ve TEKNIK-DOKUMAN.md, davranışı **elle, satır numarası/sabit
+README.md ve docs/TEKNIK-DOKUMAN.md, davranışı **elle, satır numarası/sabit
 değer referanslarıyla** anlatıyor. Algoritma, veri şeması, dış servis
 entegrasyonu ya da satır sayısı değiştiren her değişiklikten sonra bu iki
 dosyanın ilgili bölümünü de güncelle — ayrıntı için
@@ -55,6 +58,6 @@ dosyanın ilgili bölümünü de güncelle — ayrıntı için
 
 ## Tasarım
 
-Görsel değişiklik yapıyorsan `Turkish Support Services — Design System.md`
+Görsel değişiklik yapıyorsan `docs/Turkish Support Services — Design System.md`
 dosyasındaki renk/tipografi/bileşen kurallarına uy — yeni marka rengi,
 gradyan, glassmorphism icat etme.

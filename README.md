@@ -1,42 +1,11 @@
 # TSS — Rota Planlama Paneli
 
-Tarayıcıda çalışan sefer planlama arayüzü. **İki şekilde kullanılabilir:**
+Araç filosu için sefer/rota planlama uygulaması. **İstemci-sunucu mimarisi:**
+Express + SQLite backend veriyi tutar (lokasyon, araç, sefer geçmişi, ayarlar),
+tarayıcıdaki panel de arayüzü ve rota algoritmasını çalıştırır. Aynı ağdaki
+herkes aynı veriyi görür.
 
-- **Tek kişilik / kurulumsuz:** `index.html` dosyasını çift tıkla — veri
-  yalnızca o tarayıcının `localStorage`'ında tutulur (eski davranış, birebir
-  korundu).
-- **Ekip / çoklu cihaz:** `server/` altındaki backend'i çalıştır (bkz. aşağı) —
-  lokasyon, araç, sefer geçmişi ve ayarlar SQLite'ta ortak tutulur, aynı ağdaki
-  herkes aynı veriyi görür.
-
-## Klasör
-
-```
-tss-rota-panel/
-├── index.html
-├── styles.css
-├── logo-white.png      ← buraya bırakılırsa başlıkta görünür (yoksa yazı ile düşer)
-├── vendor/             Leaflet, SheetJS, jsPDF, html2canvas, Outfit — hepsi yerel
-├── js/
-│   ├── data.js         lokasyon/araç/durak verisi, Excel içe aktarma, backend senkronu
-│   ├── osrm.js         gerçek yol mesafesi ve güzergah geometrisi
-│   ├── tomtom.js       opsiyonel canlı trafik (anahtar sunucuda ya da kullanıcıda)
-│   ├── weather.js      durak bazlı hava durumu uyarıları (Open-Meteo)
-│   ├── fuelprice.js    ulusal ortalama akaryakıt fiyatı
-│   ├── optimizer.js    kapasiteli sıralama optimizasyonu (tek araç, tek grup)
-│   ├── fleet.js        çoklu araç ataması: kümeleme + optimizer.js'i grup başına çağırma
-│   ├── exporter.js     Excel ve PDF çıktısı
-│   └── app.js          arayüz akışı
-└── server/             (opsiyonel) Express + SQLite backend — bkz. server/README.md
-    ├── index.js        REST endpoint'leri + statik dosya sunumu + token kontrolü
-    ├── db.js           SQLite şeması
-    ├── store.js        CRUD + doğrulama (js/data.js ile aynı kurallar)
-    ├── tomtom.js       TomTom proxy'si — API anahtarı tarayıcıya inmez
-    ├── fuelprice.js    yakıt fiyatını kaynaktan doğrudan çeker (CORS engeli yok)
-    └── scripts/        localStorage içe aktarma + otomatik testler
-```
-
-## Backend ile çalıştırma (ekip kullanımı)
+## Çalıştırma
 
 ```bash
 cd server
@@ -45,17 +14,52 @@ cp .env.example .env     # APP_TOKEN'ı doldur (LAN paylaşımında şart)
 npm start
 ```
 
-Sonra `http://localhost:3000`. Aynı ağdaki diğer cihazlar
+Sonra tarayıcıda `http://localhost:3000`. Aynı ağdaki diğer cihazlar
 `http://<sunucu-makinenin-ip'si>:3000` ile bağlanır; ilk açılışta erişim
 anahtarı bir kez sorulur ve o tarayıcıda saklanır.
 
-Panel, bir sunucudan servis edildiğini kendisi anlar: `file://` ile açılırsa
-backend'e hiç bağlanmaz, eskisi gibi yalnızca `localStorage` ile çalışır.
-Mevcut tarayıcı verisini SQLite'a aktarmak için bkz. `server/README.md`.
+Ayrıntılar (veri aktarımı, API, TomTom anahtarı, testler) için:
+[`server/README.md`](server/README.md).
 
-Yazma işlemleri arayüzü hiç bekletmez: değişiklik anında ekranda görünür,
-arka planda sunucuya iletilir. Bağlantı yoksa değişiklikler kuyrukta
-(outbox) bekler ve bağlantı gelince otomatik gönderilir.
+## Klasör
+
+```
+tss-rota-panel/
+├── public/                  Tarayıcıya giden her şey (backend bunu servis eder)
+│   ├── index.html
+│   ├── styles.css
+│   ├── assets/              logo.png, yatay_beyaz.png
+│   ├── vendor/              Leaflet, SheetJS, jsPDF, html2canvas, Outfit — hepsi yerel
+│   └── js/
+│       ├── data.js          veri katmanı: backend senkronu + outbox, Excel içe aktarma
+│       ├── osrm.js          gerçek yol mesafesi ve güzergah geometrisi
+│       ├── tomtom.js        canlı trafik (backend proxy'si üzerinden)
+│       ├── weather.js       durak bazlı hava durumu uyarıları (Open-Meteo)
+│       ├── fuelprice.js     ulusal ortalama akaryakıt fiyatı (backend'den)
+│       ├── optimizer.js     kapasiteli sıralama optimizasyonu (tek araç, tek grup)
+│       ├── fleet.js         çoklu araç ataması: kümeleme + optimizer.js'i grup başına çağırma
+│       ├── exporter.js      Excel ve PDF çıktısı
+│       └── app.js           arayüz akışı
+├── server/                  Express + SQLite backend — bkz. server/README.md
+│   ├── index.js             REST endpoint'leri + statik sunum + token kontrolü
+│   ├── db.js                SQLite şeması
+│   ├── store.js             CRUD + doğrulama (public/js/data.js ile aynı kurallar)
+│   ├── tomtom.js            TomTom proxy'si — API anahtarı tarayıcıya inmez
+│   ├── fuelprice.js         yakıt fiyatını kaynaktan doğrudan çeker (CORS engeli yok)
+│   └── scripts/             veri içe aktarma + otomatik testler
+├── docs/                    TEKNIK-DOKUMAN.md, tasarım sistemi, araştırma notları
+└── CLAUDE.md                Claude Code için proje talimatları
+```
+
+## Veri akışı
+
+Yazma işlemleri arayüzü **hiç bekletmez**: değişiklik anında ekranda görünür,
+arka planda sunucuya iletilir. Sunucuya ulaşılamıyorsa değişiklikler tarayıcıda
+bir kuyrukta (outbox) bekler ve bağlantı gelince otomatik gönderilir — yani
+sunucu birkaç dakika kapansa da çalışmaya devam edebilirsin.
+
+Açılışta panel önce yerel önbellekten çizilir, hemen ardından sunucudaki güncel
+veriyle sessizce tazelenir. Gerçek veri kaynağı her zaman sunucudur.
 
 ## Kullanım
 
@@ -79,11 +83,13 @@ arka planda sunucuya iletilir. Bağlantı yoksa değişiklikler kuyrukta
 
 Lokasyon ve araç listeleri üst menüden yönetilir; ayrı Excel dosyalarından içe aktarılabilir.
 Haritaya sağ tıklamak yeni lokasyon formunu koordinatlarla doldurur.
-Lokasyon ve araç kayıtları tarayıcıda saklanır, sekme kapansa da kalır.
+Lokasyon, araç ve sefer geçmişi sunucuda saklanır — ekipteki herkes aynı listeyi
+görür. Taslak duraklar ve hesaplanan plan ise sadece o sekmede durur, sayfa
+yenilenince sıfırlanır.
 
 ## Araç ataması (çoklu araç)
 
-Artık sefer planlamadan önce tek bir araç seçilmiyor — `js/fleet.js` şu kuralla karar verir:
+Artık sefer planlamadan önce tek bir araç seçilmiyor — `public/js/fleet.js` şu kuralla karar verir:
 
 1. Önce **tüm duraklar tek bir araca sığıyor mu** diye bakılır (kullanılabilir kapasitesi
    yeten en küçük araç denenir). Sığıyorsa her zaman tek araç kullanılır — gereksiz yere
@@ -101,7 +107,7 @@ Rota tablosunda bir gruba atanan araç, onaylanmadan önce elle değiştirilebil
 (kapasite yetersiz kalırsa engellenmez, sadece ihlal olarak işaretlenir).
 
 Not: sıralama kararının kendisi (hangi durağın hangi sırada ziyaret edileceği) hâlâ
-tamamen `js/optimizer.js`'teki değişmemiş algoritmadan çıkıyor — `fleet.js` sadece
+tamamen `public/js/optimizer.js`'teki değişmemiş algoritmadan çıkıyor — `fleet.js` sadece
 duraklar birden fazla araca bölünmesi gerektiğinde hangi durağın hangi araca gideceğine
 karar veriyor, sonra her grup için optimizer'ı ayrı ayrı çağırıyor.
 
@@ -122,17 +128,11 @@ olarak hesaplanır:
   eklenen Fiat Ducato/Peugeot Partner gibi araçlar üreticinin karma çevrim
   ortalamasına yakın bir varsayılanla gelir — gerçek filo verisi (yakıt fişi)
   girildikçe güncellenmesi önerilir.
-- **Fiyat:** Türkiye'deki ücretsiz akaryakıt fiyat servisleri tarayıcıdan CORS
-  nedeniyle doğrudan çağrılamıyor. Bu yüzden:
-  - **Backend çalışıyorsa** fiyatı sunucu kaynaktan doğrudan çeker
-    (`GET /api/fuel-price`, 6 saatlik önbellek) — CORS bir tarayıcı kısıtı
-    olduğu için sunucuda böyle bir engel yok.
-  - **Backend yoksa** (`file://`) devreye GitHub Actions iş akışı
-    (`.github/workflows/fuel-price.yml`) girer: fiyatı 6 saatte bir çekip
-    `data/fuel-price.json`'a yazar, panel de o dosyayı okur.
-
-  Trafik Ayarları > Yakıt bölümünden elle bir TL/L fiyatı girilirse o her
-  zaman önceliklidir. Detaylar: TEKNIK-DOKUMAN.md §10.4.
+- **Fiyat:** Ulusal ortalama fiyatı **sunucu** çeker (`GET /api/fuel-price`,
+  6 saatlik önbellek). Kaynak servis tarayıcıdan CORS nedeniyle doğrudan
+  çağrılamıyor; CORS bir tarayıcı kısıtı olduğundan sunucuda böyle bir engel
+  yok. Trafik Ayarları > Yakıt bölümünden elle bir TL/L fiyatı girilirse o her
+  zaman önceliklidir. Detaylar: [`docs/TEKNIK-DOKUMAN.md`](docs/TEKNIK-DOKUMAN.md) §10.4.
 
 ## Algoritma
 
@@ -147,13 +147,12 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
 
 ## Bilinen sınırlar
 
-- **Çevrimiçi bağımlılık:** kütüphaneler ve yazı tipi `vendor/` altında yerel; internet yalnızca iki şey için gerekli — mesafe hesabı (OSRM) ve harita karoları (OpenStreetMap). Tam çevrimdışı kullanım için kendi OSRM örneğinizi kurup `js/osrm.js` içindeki `BASE` değerini, karo sunucusu için de `js/app.js` içindeki `L.tileLayer` adresini değiştirin.
+- **Çevrimiçi bağımlılık:** kütüphaneler ve yazı tipi `vendor/` altında yerel; internet yalnızca iki şey için gerekli — mesafe hesabı (OSRM) ve harita karoları (OpenStreetMap). Tam çevrimdışı kullanım için kendi OSRM örneğinizi kurup `public/js/osrm.js` içindeki `BASE` değerini, karo sunucusu için de `public/js/app.js` içindeki `L.tileLayer` adresini değiştirin.
 - **Yasak güzergah kısıtı** (köprü vb.) henüz uygulanmıyor — açık OSRM sunucusu özel `exclude` profillerini desteklemiyor. Sonraki fazda kendi OSRM örneğiyle eklenebilir.
 - **Kümeleme sezgiseldir, kesin optimum garanti etmez:** çoklu araç gerektiğinde duraklar en yakın nokta tohumlamasıyla kümelenir (bkz. Araç Ataması) — küçük durak sayılarında iyi sonuç verir, çok sayıda dağınık durakta teorik en iyi bölüştürme olmayabilir.
 - **Başlangıç Yükü tek bir araca aittir:** birden fazla araç gerektiğinde bu yük, başlangıç noktasına en yakın kümeye atanan araca eklenir.
-- **Trafik verisi yok:** süreler sabit hız varsayımıyla hesaplanır.
-- **Yakıt fiyatı otomatik güncellemesi GitHub Actions'a bağlı:** repo bir
-  GitHub uzak sunucusuna bağlı değilse ya da Actions çalışmıyorsa otomatik
+- **Trafik verisi kısmen gerçek:** "En Az Süre" modunda TomTom anahtarı tanımlıysa canlı trafik kullanılır; aksi halde süreler gün içi zaman dilimlerine göre sabit çarpanlarla tahmin edilir.
+- **Yakıt fiyatı dış servise bağlı:** kaynak servise ulaşılamazsa otomatik
   fiyat gelmez, kullanıcı Trafik Ayarları > Yakıt'tan elle girer (bkz. yukarı).
 - **Yakıt tüketimi varsayılanları tahminidir:** gerçek filo verisiyle
   (yakıt fişi/depo kaydı) güncellenmedikçe yakıt maliyeti kaba bir tahmindir.
@@ -166,10 +165,10 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
 
 ## Devam edecek geliştiriciler için
 
-Proje şu an canlıya alınmıyor, mevcut haliyle kalabilir. Ama ileride biri bunu canlıya
-almaya karar verirse, önce şunları çözmesi gerekiyor:
+Proje ofis/LAN içinde kullanılmak üzere tasarlandı. İnternete açık bir kuruluma
+geçilecekse önce şunların çözülmesi gerekiyor:
 
-- **OSRM: halka açık demo sunucusu kullanılıyor** (`js/osrm.js` içindeki `BASE = 'https://router.project-osrm.org'`).
+- **OSRM: halka açık demo sunucusu kullanılıyor** (`public/js/osrm.js` içindeki `BASE = 'https://router.project-osrm.org'`).
   Bu sunucu proje/kurum kullanımı için değil, herkese açık bir demo — kullanım şartları
   ticari/sürekli trafiğe izin vermiyor. Canlıya alınırsa:
   - Rate-limit'e takılır, belirli bir istek sayısından sonra mesafe/rota istekleri
@@ -181,23 +180,20 @@ almaya karar verirse, önce şunları çözmesi gerekiyor:
     değerini değiştirerek ona yönlendirmek gerekir (README'nin "Bilinen sınırlar"
     bölümünde de geçiyor).
 
-- ~~**Veri kalıcılığı sadece `localStorage`'da**~~ — **çözüldü** (`server/`):
-  artık opsiyonel bir Express + SQLite backend var, veri ekip içinde paylaşılıyor
-  ve yedeklenebiliyor (`server/data/tss.db` dosyasını kopyalamak yeterli).
-  `TSSData` arayüzü aynen korundu, `app.js`/`fleet.js`/`exporter.js` değişmedi.
-  Kalan sınırlar:
-  - Backend çalıştırılmazsa (`file://` ile açma) davranış eskisi gibi: veri tek
-    tarayıcıya bağlı, tarayıcı verisi temizlenirse kaybolur.
-  - Çakışma politikası v1'de **son yazan kazanır** — aynı kaydı iki kişi aynı
-    anda düzenlerse biri sessizce diğerinin üzerine yazar (şemada `updated_at`
-    var, ileride çakışma tespiti eklenebilir).
+- **Veri katmanının kalan sınırları** (veri artık SQLite'ta, yedek almak
+  `server/data/tss.db` dosyasını kopyalamak demek):
+  - Çakışma politikası **son yazan kazanır** — aynı kaydı iki kişi aynı anda
+    düzenlerse biri sessizce diğerinin üzerine yazar (şemada `updated_at` var,
+    ileride çakışma tespiti eklenebilir).
   - Erişim kontrolü tek paylaşılan anahtar (`APP_TOKEN`); kullanıcı hesabı,
     kimlik veya rol/yetki yönetimi yok — küçük bir LAN ekibi için tasarlandı.
+  - Sunucu tek makinede çalışır; o makine kapalıysa panel yalnızca yerel
+    önbellekle (son görülen veriyle) açılır.
 
-- **Otomatik test durumu:** backend ve `js/data.js`'in senkronizasyon katmanı
+- **Otomatik test durumu:** backend ve `public/js/data.js`'in senkronizasyon katmanı
   için testler var (`cd server && npm test` → 98 test: REST yüzeyi, doğrulama,
-  outbox/çevrimdışı davranışı, `file://` modu). Ancak **`js/optimizer.js` ve
-  `js/fleet.js` (rota/kümeleme algoritması) hâlâ testsiz** — bu iki dosyada
+  outbox/çevrimdışı davranışı, sunucu erişilemezken dayanıklılık). Ancak **`public/js/optimizer.js` ve
+  `public/js/fleet.js` (rota/kümeleme algoritması) hâlâ testsiz** — bu iki dosyada
   değişiklik yapmadan önce birkaç senaryo testi (bilinen giriş/mesafe matrisi →
   beklenen sıralama/kısıt ihlali) eklemek regresyonları yakalamak açısından
   faydalı olur. Arayüz akışları da elle test edilmeli.
