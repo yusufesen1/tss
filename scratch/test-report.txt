@@ -1,0 +1,13 @@
+✅ [PASS] 1. Paralel Doğrulama: Boş isim reddedilmeli (Location)
+✅ [PASS] 1. Paralel Doğrulama: Geçersiz enlem reddedilmeli (Location)
+✅ [PASS] 1. Paralel Doğrulama: Geçersiz kapasite reddedilmeli (Vehicle)
+✅ [PASS] 1. Paralel Doğrulama: fuelConsumption boşsa 7'ye düşmeli
+✅ [PASS] 1. Paralel Doğrulama: Geçerli veri kabul edilmeli
+❌ [FAIL] 2. parseExcelTime Testleri (importLocationRows üzerinden)
+   Hata: Expected values to be strictly equal:
+
+'00:00' !== '23:59'
+
+✅ [PASS] 3 & 4. normalizeKey ve importRows (Türkçe karakter ve virgüllü veri)
+✅ [PASS] 5. Durak İşlemleri: addStop, updateStopPallets (clamp to 1) ve removeStop
+✅ [PASS] 6. totalFleetCapacity Testi

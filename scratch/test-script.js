@@ -4,10 +4,15 @@ const path = require('path');
 
 // 1. Setup global window for data.js
 global.window = global;
+let localStoreData = {};
 global.localStorage = {
-  getItem: () => null,
-  setItem: () => {}
+  getItem: (k) => localStoreData[k] || null,
+  setItem: (k, v) => { localStoreData[k] = v; }
 };
+
+function getClientState() {
+  return JSON.parse(localStoreData['tss-rota-panel-v1'] || '{}');
+}
 
 // Load data.js
 const dataJsPath = path.resolve(__dirname, '../public/js/data.js');
@@ -15,6 +20,7 @@ const dataJsCode = fs.readFileSync(dataJsPath, 'utf8');
 eval(dataJsCode);
 
 const TSSData = global.window.TSSData;
+TSSData.load(); // Load defaults into state so that we have initial arrays
 
 // Setup store.js
 process.env.TSS_DB_PATH = ':memory:';
@@ -104,7 +110,7 @@ runTest("2. parseExcelTime Testleri (importLocationRows üzerinden)", () => {
   
   assert.strictEqual(result1.added, 7);
   
-  const locs = window.TSSData.bootstrap().locations;
+  const locs = getClientState().locations;
   const t1 = locs.find(l => l.name === 'T1');
   assert.strictEqual(t1.from, '08:00');
   assert.strictEqual(t1.until, '18:00');
@@ -147,7 +153,7 @@ runTest("3 & 4. normalizeKey ve importRows (Türkçe karakter ve virgüllü veri
   assert.strictEqual(locRes.added, 1);
   assert.strictEqual(locRes.skipped, 1);
   
-  const locs = window.TSSData.bootstrap().locations;
+  const locs = getClientState().locations;
   const ist = locs.find(l => l.name === 'İSTANBUL');
   assert.strictEqual(ist.lat, 41.25);
   assert.strictEqual(ist.lng, 28.5);
@@ -158,7 +164,7 @@ runTest("3 & 4. normalizeKey ve importRows (Türkçe karakter ve virgüllü veri
   const vehRes = TSSData.importVehicleRows(vehRows);
   assert.strictEqual(vehRes.added, 1);
   
-  const vehs = window.TSSData.bootstrap().vehicles;
+  const vehs = getClientState().vehicles;
   const veh = vehs.find(v => v.plate === '34ÇŞĞİÜÖ');
   assert.ok(veh, "Türkçe başlıklı araç import edilemedi");
 });
@@ -197,7 +203,7 @@ runTest("5. Durak İşlemleri: addStop, updateStopPallets (clamp to 1) ve remove
 
 runTest("6. totalFleetCapacity Testi", () => {
   // Clear vehicles and add specific ones
-  window.TSSData.bootstrap().vehicles.forEach(v => TSSData.removeVehicle(v.id));
+  getClientState().vehicles.forEach(v => TSSData.removeVehicle(v.id));
   
   const v1 = TSSData.addVehicle({ plate: 'P1', capacity: 10 });
   const v2 = TSSData.addVehicle({ plate: 'P2', capacity: 5 });

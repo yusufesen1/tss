@@ -55,8 +55,12 @@ function routeLeg(origin, destination) {
     return Promise.reject(noKey);
   }
 
+  // sectionType=traffic: rota ÜZERİNDEKİ tıkanık bölümleri aynı yanıtta
+  // döndürür (ayrı bir istek/coğrafi filtreleme gerekmez). Her bölüm rota
+  // geometrisindeki nokta aralığını (startPointIndex→endPointIndex) taşır.
   var url = BASE + '/' + coord(origin) + ':' + coord(destination) +
-    '/json?key=' + encodeURIComponent(apiKey) + '&traffic=true&travelMode=car';
+    '/json?key=' + encodeURIComponent(apiKey) +
+    '&traffic=true&travelMode=car&sectionType=traffic';
 
   var controller = new AbortController();
   var timer = setTimeout(function () { controller.abort(); }, TIMEOUT_MS);
@@ -86,11 +90,26 @@ function routeLeg(origin, destination) {
       (route.legs || []).forEach(function (leg) {
         (leg.points || []).forEach(function (p) { geometry.push([p.latitude, p.longitude]); });
       });
+      // Yalnızca gerçekten tıkanık bölümler (TRAFFIC tipi); TomTom başka
+      // section tipleri de döndürebilir.
+      var jams = (route.sections || [])
+        .filter(function (s) { return s.sectionType === 'TRAFFIC'; })
+        .map(function (s) {
+          return {
+            category: s.simpleCategory || null,          // JAM | ROAD_WORK | ROAD_CLOSURE
+            delaySeconds: s.delayInSeconds || 0,
+            effectiveSpeedKmh: s.effectiveSpeedInKmh != null ? s.effectiveSpeedInKmh : null,
+            magnitudeOfDelay: s.magnitudeOfDelay != null ? s.magnitudeOfDelay : null,
+            startPointIndex: s.startPointIndex,
+            endPointIndex: s.endPointIndex
+          };
+        });
       return {
         distanceMeters: route.summary.lengthInMeters,
         durationSeconds: route.summary.travelTimeInSeconds,
         trafficDelaySeconds: route.summary.trafficDelayInSeconds || 0,
-        geometry: geometry
+        geometry: geometry,
+        jams: jams
       };
     })
     ['catch'](function (err) {

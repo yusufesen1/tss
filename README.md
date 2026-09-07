@@ -151,7 +151,11 @@ Kısıt sağlanamıyorsa en iyi rota yine üretilir; ihlal tabloda ve harita iş
 - **Yasak güzergah kısıtı** (köprü vb.) henüz uygulanmıyor — açık OSRM sunucusu özel `exclude` profillerini desteklemiyor. Sonraki fazda kendi OSRM örneğiyle eklenebilir.
 - **Kümeleme sezgiseldir, kesin optimum garanti etmez:** çoklu araç gerektiğinde duraklar en yakın nokta tohumlamasıyla kümelenir (bkz. Araç Ataması) — küçük durak sayılarında iyi sonuç verir, çok sayıda dağınık durakta teorik en iyi bölüştürme olmayabilir.
 - **Başlangıç Yükü tek bir araca aittir:** birden fazla araç gerektiğinde bu yük, başlangıç noktasına en yakın kümeye atanan araca eklenir.
-- **Trafik verisi kısmen gerçek:** "En Az Süre" modunda TomTom anahtarı tanımlıysa canlı trafik kullanılır; aksi halde süreler gün içi zaman dilimlerine göre sabit çarpanlarla tahmin edilir.
+- **Trafik verisi anahtara bağlı:** TomTom anahtarı tanımlıysa süreler her iki
+  optimizasyon modunda da canlı trafikten gelir (o yolun, o yöndeki gerçek
+  süresi). Anahtar yoksa ya da servise ulaşılamazsa süreler gün içi zaman
+  dilimlerine göre sabit çarpanlarla tahmin edilir — bu yedek model yönü
+  bilmez, yani gidiş ve dönüş aynı kabul edilir.
 - **Yakıt fiyatı dış servise bağlı:** kaynak servise ulaşılamazsa otomatik
   fiyat gelmez, kullanıcı Trafik Ayarları > Yakıt'tan elle girer (bkz. yukarı).
 - **Yakıt tüketimi varsayılanları tahminidir:** gerçek filo verisiyle

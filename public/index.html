@@ -381,10 +381,16 @@
       <button class="btn btn-neutral btn-sm" data-close-modal="modalTraffic">Kapat</button>
     </div>
     <div class="modal-body">
+      <p class="hint">
+        Bir TomTom anahtarı tanımlıysa süreler <strong>canlı trafik verisinden</strong>
+        gelir ve aşağıdaki katsayılar kullanılmaz. Buradaki ayarlar yalnızca canlı
+        veriye ulaşılamadığında (anahtar yok, kota dolu, bağlantı hatası) devreye
+        giren yedek tahmindir.
+      </p>
       <div class="form-card">
         <label class="check-row">
           <input type="checkbox" id="trafficEnabled" />
-          <span>Trafik katsayılarını uygula</span>
+          <span>Trafik katsayılarını uygula (canlı veri yokken)</span>
         </label>
         <label class="check-row">
           <input type="checkbox" id="trafficWeekend" />

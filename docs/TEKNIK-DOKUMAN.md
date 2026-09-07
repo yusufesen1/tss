@@ -568,9 +568,21 @@ garanti yoktur, sadece iyi bir yaklaşık çözüm.
 
 ### 7.2 Trafik modeli
 
-Gerçek trafik verisi/API'si **yok** (maliyet/backend gerektirir). Bunun yerine
-gün içi sabit zaman dilimlerine göre bir **süre çarpanı** uygulanır
-(`trafficFactorAt(clockSec, traffic, isWeekend)`):
+> **Öncelik sırası:** Bir TomTom anahtarı tanımlıysa süreler **canlı trafik
+> verisinden** gelir (§10.3) — her bacağın o yoldaki, o yöndeki, o andaki
+> gerçek süresi. Aşağıdaki sabit çarpanlar yalnızca canlı veriye
+> ulaşılamadığında (anahtar yok, kota dolu, ağ hatası) devreye giren
+> **yedek tahmindir**. Arayüzdeki Trafik Ayarları bölümü de bunu böyle
+> anlatır.
+>
+> Yedeğin bilinen zayıflığı: çarpan yalnızca saati bilir, **yolu ve yönü
+> bilmez** — sabah 08:00'de D-100'ün her iki yönüne de aynı ×1.8 uygulanır,
+> oysa tıkanıklık genelde tek yönlüdür. Bunu düzeltmenin doğru yolu daha
+> ayrıntılı bir çarpan tablosu değil, canlı veriyi kullanmaktır; bu yüzden
+> canlı veri her iki optimizasyon modunda da çekilir (§10.3).
+
+Yedek model, gün içi sabit zaman dilimlerine göre bir **süre çarpanı**
+uygular (`trafficFactorAt(clockSec, traffic, isWeekend)`):
 
 ```
 sabah yoğunluğu  07:00–09:30  × 1.8   (varsayılan, DEFAULT_TRAFFIC — ayarlardan değiştirilebilir)
@@ -911,11 +923,25 @@ snowfall,temperature_2m&timezone=auto&forecast_days=2`
 Dönen şekil her iki katmanda da aynı:
 `{ distanceMeters, durationSeconds, trafficDelaySeconds, geometry }`.
 
-OSRM'in aksine **varsayılan olarak kapalıdır**: yalnızca iki koşul birden
-sağlanınca devreye girer — (1) Optimizasyon metriği **"En Az Süre"** seçili,
-(2) bir TomTom anahtarı tanımlı (aşağıdaki tabloya bkz.). Aksi halde
-`tomtom.js` hiç çağrılmaz ve uygulama tamamen OSRM'in tahmini üzerinden
-çalışır.
+**Her iki optimizasyon modunda da çalışır.** Tek koşul bir TomTom anahtarının
+tanımlı olmasıdır; yoksa `tomtom.js` hiç çağrılmaz ve uygulama OSRM tahmini +
+sabit çarpan yedeğiyle çalışır (§7.2).
+
+> **Neden mesafe modunda da çekiliyor:** "En Kısa Mesafe" seçmek, rotanın
+> *hangi sırayla* kurulacağına dair bir tercihtir — gösterilen saatlerin
+> uydurma olmasını istemek değil. Eskiden canlı trafik yalnızca "En Az Süre"
+> modunda çekiliyordu, dolayısıyla **varsayılan modda** tablodaki varış
+> saatleri yönü bilmeyen sabit çarpandan geliyordu. Artık sıralama kararı
+> metriğe göre değişmeye devam ediyor (mesafe modunda yine en kısa yol
+> seçilir), ama süreler her iki modda da gerçek veriden geliyor.
+
+`sectionType=traffic` parametresi sayesinde rota **üzerindeki** tıkanık
+bölümler de aynı yanıtta gelir (`jams`): kategori (JAM / ROAD_WORK /
+ROAD_CLOSURE), gecikme saniyesi, etkin hız ve rota geometrisindeki nokta
+aralığı. Ayrı bir istek ya da coğrafi filtreleme gerekmez. Araç kartındaki
+**"Trafik Gecikmesi"** özeti bu veriden üretilir ve yalnızca canlı veri
+geldiyse gösterilir — OSRM tahminine düşülmüşse ölçülmüş bir gecikme
+olmadığından kart hiç çizilmez.
 
 **Neden n istek, n² değil:** Sıralama kararının kendisi hâlâ OSRM'in
 ücretsiz/sınırsız `matrix()`'inden çıkıyor (tüm nokta çiftleri). TomTom'a
@@ -1128,7 +1154,7 @@ README.md aynı sınırları kullanıcı diliyle listeler; buradaki tablo ayrıc
 | Yasak güzergah kısıtı yok | OSRM demo sunucusu özel `exclude` profili desteklemiyor | Köprü/tonaj kısıtları rotaya yansımaz — sadece onay notuna elle yazılabilir |
 | Kümeleme kesin optimum değil | Sezgisel farthest-point seeding, tek geçiş | Çok sayıda dağınık durakta teorik en iyi bölüştürme garanti edilmez |
 | Büyük durak bölüştürme sezgiseldir, kesin optimum değil | `distributeBigStop()` en-yakın-kümeden-başlayarak açgözlü (greedy) doldurma yapar (bkz. §8.6), gerçek bir VRP çözücü değil | Nadir kombinasyonlarda (örn. `initialLoad` bir kümenin ihtiyacını tek başına her aracın kapasitesinin üstüne çıkarıyorsa, ya da tüm arzı sağlayan tek bir büyük yükleme normal boşaltmalardan coğrafi olarak uzaksa) hâlâ önlenebilir olmayan bir kalıntı ihlal görülebilir — filo toplamda yeterliyken bile. Algoritma bunu her zaman **mümkün olan en az** ihlale indirger ve `warning` alanında açıkça bildirir, ama sıfıra indirme garantisi yoktur |
-| Trafik verisi kısmen gerçek | Canlı trafik yalnızca "En Az Süre" modunda ve bir TomTom anahtarı tanımlıyken devreye girer (§10.3); **varsayılan mod "En Kısa Mesafe"** ve anahtar yoksa sabit zaman dilimi çarpanları kullanılır (§7.2) | Varsayılan ayarlarla süreler kaba tahmindir; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
+| Canlı trafik anahtara bağlı | TomTom anahtarı tanımlıysa süreler her iki modda da canlı veriden gelir (§10.3); anahtar yoksa yönü bilmeyen sabit çarpan yedeğine düşülür (§7.2) | Anahtarsız kurulumda süreler kaba tahmindir; TomTom ücretli/kotalı olduğundan kesintisiz canlı veri garanti değil |
 | TomTom best-effort | Anahtar yoksa ya da istek başarısız olursa (kota, ağ, proxy hatası) sessizce OSRM tahminine düşülür | "En Az Süre" seçili olsa bile sonuç OSRM'in statik tahmini olabilir; kullanıcı bunu yalnızca bir toast'tan anlar, tabloda ayrıca işaretlenmez |
 | Otomatik test **kısmen** var | `server/` ve `public/js/data.js` senkron katmanı test ediliyor (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
 | Yakıt fiyatı dış servise bağlı | Kaynak servis (UcuzYakıtBul) resmi bir API değil, sözleşmesi değişebilir (§10.4) | Servise ulaşılamazsa son bilinen fiyat (bayat da olsa) gösterilir; hiç veri yoksa kullanıcı Trafik Ayarları'ndan elle girer |

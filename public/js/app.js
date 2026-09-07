@@ -694,10 +694,13 @@
           .then(function () { return plan; });
       })
       .then(function (plan) {
-        if (costMetric !== 'duration') return plan;
-        // Anahtar sunucuda tanımlıysa buraya boş gelir ama özellik yine
-        // kullanılabilir (istek backend proxy'sinden gider) — bu yüzden
-        // kontrol hasTomTomKey() ile yapılıyor.
+        // Canlı trafik HER İKİ optimizasyon modunda çekilir. Sıralama kararı
+        // değişmez — "En Kısa Mesafe" seçiliyse rota yine en kısa yola göre
+        // kurulur; canlı veri yalnızca o rotanın SÜRELERİNİ gerçeğe çevirir.
+        // Aksi halde varsayılan modda tabloda gösterilen saatler, yönü bilmeyen
+        // sabit trafik çarpanından gelirdi (bkz. optimizer.js trafficFactorAt).
+        // Anahtar sunucuda tanımlıysa getTomTomApiKey() boş döner ama özellik
+        // yine kullanılabilir — bu yüzden kontrol hasTomTomKey() ile yapılıyor.
         if (!D.hasTomTomKey()) return plan; // key hiç yok: sessizce OSRM ile devam
 
         setLoading(true, 'Canlı trafik verisi alınıyor (TomTom)…');
@@ -836,7 +839,10 @@
     var otherMetric = otherCostMetric(activeMetric);
     var otherAssignment = computeMetricAssignment(otherMetric);
 
-    var needsTomTom = otherMetric === 'duration' && D.hasTomTomKey() && !!TomTom;
+    // Aktif plan artık her iki modda canlı trafikle hesaplanıyor; karşılaştırılan
+    // taraf da aynı kaynağı kullanmalı, aksi halde canlı süreleri sabit çarpanla
+    // üretilmiş sürelerle kıyaslamış olurduk (elma-armut).
+    var needsTomTom = D.hasTomTomKey() && !!TomTom;
 
     if (!needsTomTom) {
       renderCompareModal(activeMetric, otherMetric, otherAssignment);
@@ -1081,8 +1087,19 @@
     return Math.max(0, result.totalSeconds - serviceTotal);
   }
 
+  // Canlı trafik verisi alınmış bir grupta, TomTom'un bildirdiği gecikmelerin
+  // toplamı. group.liveLegs yoksa (OSRM tahminine düşülmüşse) null döner —
+  // "0 dk gecikme" ile "bilinmiyor" karışmasın diye.
+  function liveTrafficDelay(group) {
+    if (!group.liveLegs) return null;
+    var total = 0;
+    group.liveLegs.forEach(function (leg) { total += leg.trafficDelaySeconds || 0; });
+    return total;
+  }
+
   function buildGroupMeta(group) {
     var fc = fuelCostForGroup(group);
+    var delaySec = liveTrafficDelay(group);
     return {
       distance: km(group.result.distance) + ' km',
       duration: durationLabel(group.result.totalSeconds),
@@ -1091,7 +1108,11 @@
       departure: el.inpDeparture.value,
       fuelCost: formatFuelCost(fc),
       fuelCostDetail: formatFuelCostDetail(fc),
-      fuelCostValue: fc.value
+      fuelCostValue: fc.value,
+      trafficDelay: delaySec === null ? null : durationLabel(delaySec),
+      trafficDelayDetail: delaySec === null
+        ? null
+        : 'TomTom canlı trafik verisine göre, bu rotanın boş yola kıyasla kaybettiği süre.'
     };
   }
 
@@ -1358,6 +1379,12 @@
     summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration, 'duration'));
     summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration, 'road'));
     summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish, 'flag'));
+    // Yalnızca canlı veri geldiyse gösterilir — OSRM tahminine düşüldüyse
+    // ortada ölçülmüş bir gecikme yok, boş kart göstermek yanıltıcı olurdu.
+    if (group.meta.trafficDelay) {
+      summary.appendChild(buildSummaryCard('Trafik Gecikmesi', group.meta.trafficDelay,
+        'duration', group.meta.trafficDelayDetail));
+    }
     summary.appendChild(buildSummaryCard('Yakıt Maliyeti', group.meta.fuelCost, 'fuel', group.meta.fuelCostDetail));
     wrap.appendChild(summary);
 
