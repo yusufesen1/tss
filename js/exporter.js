@@ -195,7 +195,7 @@
     plan.groups.forEach(function (group) {
       // Tablo başlığından önce tek satırlık bir özet: mesafe/süre kartlarıyla
       // aynı bilgiyi (bkz. #planGroups KPI kartları) Excel'e de taşır.
-      var fuelLine = group.meta ? ('Tahmini Yakıt Maliyeti (dönüş dahil): ' + group.meta.fuelCost) : '';
+      var fuelLine = group.meta ? ('Tahmini Yakıt Maliyeti: ' + group.meta.fuelCostDetail) : '';
       var data = [[fuelLine], [], HEADERS].concat(rowsToMatrix(group.tableRows));
       var sheet = XLSX.utils.aoa_to_sheet(data);
       sheet['!cols'] = [
@@ -429,7 +429,7 @@
           doc.setTextColor(100, 92, 88);
           var kpiLine = 'Mesafe: ' + group.meta.distance + '   ·   Süre: ' + group.meta.duration +
                         '   ·   Yol Süresi: ' + group.meta.driveDuration + '   ·   Bitiş: ' + group.meta.finish +
-                        '   ·   Yakıt: ' + group.meta.fuelCost;
+                        '   ·   Yakıt: ' + group.meta.fuelCostDetail;
           doc.text(kpiLine, margin, y + 5);
 
           doc.autoTable({

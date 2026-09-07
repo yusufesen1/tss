@@ -1034,9 +1034,18 @@
     return '₺' + value.toLocaleString('tr-TR', { maximumFractionDigits: 0 });
   }
 
+  // Özet kartı diğer kartlarla (Toplam Mesafe, Toplam Süre, ...) aynı kısa
+  // stilde kalsın diye burada sadece TL rakamı — km/litre detayı
+  // formatFuelCostDetail()'de, kartın title tooltip'inde ve Excel/PDF
+  // çıktılarında (daha geniş yer var) gösteriliyor.
   function formatFuelCost(fc) {
-    if (fc.value == null) return 'Fiyat girilmedi';
-    return formatTL(fc.value) + ' (' + fc.km.toFixed(1) + ' km, dönüş dahil)';
+    if (fc.value == null) return '—';
+    return formatTL(fc.value);
+  }
+
+  function formatFuelCostDetail(fc) {
+    if (fc.value == null) return 'Fiyat girilmedi — Trafik Ayarları > Yakıt bölümünden TL/L girin.';
+    return formatTL(fc.value) + ' (' + fc.km.toFixed(1) + ' km, dönüş dahil · ' + fc.liters.toFixed(1) + ' L)';
   }
 
   // Onay modalı açıldığında (notu yazmadan önce) filo genelinde tahmini
@@ -1077,6 +1086,7 @@
       finish: Opt.secondsToTime(group.result.finishSec),
       departure: el.inpDeparture.value,
       fuelCost: formatFuelCost(fc),
+      fuelCostDetail: formatFuelCostDetail(fc),
       fuelCostValue: fc.value
     };
   }
@@ -1260,15 +1270,22 @@
     el.btnExportPdf.disabled = !hasGroups;
   }
 
-  function buildSummaryCard(label, value, iconKey) {
+  function buildSummaryCard(label, value, iconKey, tooltip) {
     var card = document.createElement('div');
     card.className = 'summary-card';
+    if (tooltip) card.title = tooltip;
     var head = document.createElement('span');
     head.className = 'summary-head';
     head.innerHTML = ICONS[iconKey] || '';
     var lab = document.createElement('span');
     lab.className = 'summary-label';
-    lab.textContent = label;
+    // 5 kart artık daha dar; tarayıcının doğal metin kaydırması karta göre
+    // farklı yerden bölüyordu ("Toplam Mesafe" iki satıra düşerken "Yol
+    // Süresi" tek satırda kalıyordu gibi). Tüm etiketler hep iki kelime
+    // olduğundan (bkz. çağıran taraflar) ilk boşluktan sonrasını her zaman
+    // yeni satıra zorluyoruz — label sabit/kod içi bir metin, kullanıcı
+    // verisi değil, bu yüzden innerHTML güvenli (bkz. ICONS ile aynı gerekçe).
+    lab.innerHTML = escapeHtml(label).replace(' ', '<br>');
     head.appendChild(lab);
     var val = document.createElement('strong');
     val.className = 'summary-value';
@@ -1337,7 +1354,7 @@
     summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration, 'duration'));
     summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration, 'road'));
     summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish, 'flag'));
-    summary.appendChild(buildSummaryCard('Yakıt Maliyeti', group.meta.fuelCost, 'fuel'));
+    summary.appendChild(buildSummaryCard('Yakıt Maliyeti', group.meta.fuelCost, 'fuel', group.meta.fuelCostDetail));
     wrap.appendChild(summary);
 
     var tableWrap = document.createElement('div');
