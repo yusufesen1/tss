@@ -1,0 +1,14 @@
+# --- Claude Code ---
+.claude/worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+CLAUDE.local.md
+
+# --- Backend (server/) ---
+node_modules/
+server/data/*.db
+server/data/*.db-journal
+server/data/*.db-wal
+server/data/*.db-shm
+server/.env
+*.log

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-js-syntax.js",
+            "timeout": 15,
+            "statusMessage": "js syntax kontrolü (node --check)"
+          }
+        ]
+      }
+    ]
+  }
+}
