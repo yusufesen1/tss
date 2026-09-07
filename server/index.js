@@ -22,6 +22,8 @@ try { require('dotenv').config({ path: path.join(__dirname, '.env') }); } catch 
 
 var store = require('./store');
 var d = require('./db');
+var tomtom = require('./tomtom');
+var fuelprice = require('./fuelprice');
 
 var PORT = Number(process.env.PORT) || 3000;
 var HOST = process.env.HOST || '0.0.0.0';   // LAN'dan erişim için
@@ -62,7 +64,36 @@ app.get('/api/ping', function (req, res) {
 });
 
 app.get('/api/bootstrap', function (req, res) {
-  handle(res, function () { return store.bootstrap(); });
+  handle(res, function () {
+    var data = store.bootstrap();
+    // Anahtar sunucuda (.env) tanımlıysa tarayıcıya GÖNDERİLMEZ — panel
+    // yalnızca "yapılandırılmış mı" bilgisini alır ve istekleri proxy
+    // üzerinden yapar (bkz. server/tomtom.js, js/tomtom.js).
+    data.tomtomKeySource = tomtom.keySource();
+    if (data.tomtomKeySource === 'server') data.tomtomApiKey = '';
+    return data;
+  });
+});
+
+/* ---------------- TomTom proxy (anahtar tarayıcıya inmez) ---------------- */
+
+app.post('/api/tomtom/route-leg', function (req, res) {
+  var body = req.body || {};
+  tomtom.routeLeg(body.origin, body.destination).then(function (leg) {
+    res.json(leg);
+  }, function (err) {
+    var status = err && err.status ? err.status : 502;
+    res.status(status).json({ error: (err && err.message) || 'TomTom isteği başarısız.' });
+  });
+});
+
+/* ---------------- Yakıt fiyatı (CORS'suz, sunucu tarafından) ---------------- */
+
+app.get('/api/fuel-price', function (req, res) {
+  fuelprice.getNational().then(function (data) {
+    if (!data) return res.status(503).json({ error: 'Yakıt fiyatı şu an alınamıyor.' });
+    res.json(data);
+  });
 });
 
 /* ---------------- lokasyonlar ---------------- */

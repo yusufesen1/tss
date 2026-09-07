@@ -20,13 +20,24 @@
   var URL = 'https://raw.githubusercontent.com/yusufesen1/tss/main/data/fuel-price.json';
   var TIMEOUT_MS = 6000;
 
-  function fetchWithTimeout(url, ms) {
+  // Backend varsa fiyat oradan okunur: sunucu kaynağı doğrudan (CORS kısıtı
+  // olmadan) çağırabildiği için GitHub Actions + statik dosya dolambacına
+  // gerek kalmaz. { url: '/api/fuel-price', getToken: function () {...} }
+  var proxy = null;
+
+  function setProxy(config) {
+    proxy = (config && config.url) ? config : null;
+  }
+
+  function fetchWithTimeout(url, ms, options) {
+    var init = options || {};
     if (typeof AbortController === 'undefined' || typeof fetch === 'undefined') {
-      return typeof fetch === 'undefined' ? Promise.reject(new Error('fetch desteklenmiyor')) : fetch(url);
+      return typeof fetch === 'undefined' ? Promise.reject(new Error('fetch desteklenmiyor')) : fetch(url, init);
     }
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, ms);
-    return fetch(url, { signal: controller.signal }).then(
+    init.signal = controller.signal;
+    return fetch(url, init).then(
       function (res) { clearTimeout(timer); return res; },
       function (err) { clearTimeout(timer); throw err; }
     );
@@ -37,13 +48,21 @@
   // fiyata ya da "bilinmiyor" durumuna düşer, uygulamayı hiçbir zaman
   // bloke etmez (js/weather.js ile aynı felsefe).
   function fetchNational() {
-    return fetchWithTimeout(URL, TIMEOUT_MS)
+    var url = proxy ? proxy.url : URL;
+    var options = null;
+    if (proxy) {
+      var token = proxy.getToken ? proxy.getToken() : '';
+      if (token) options = { headers: { 'X-TSS-Token': token } };
+    }
+
+    return fetchWithTimeout(url, TIMEOUT_MS, options)
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
       })
       .then(function (data) {
-        var dizel = Number(data && data.motorin);
+        // Backend {dizel,benzin}, statik JSON ise {motorin,benzin} döndürür.
+        var dizel = Number(data && (data.dizel !== undefined ? data.dizel : data.motorin));
         var benzin = Number(data && data.benzin);
         if (!isFinite(dizel) && !isFinite(benzin)) return null;
         return {
@@ -59,5 +78,5 @@
       });
   }
 
-  global.TSSFuelPrice = { fetchNational: fetchNational };
+  global.TSSFuelPrice = { fetchNational: fetchNational, setProxy: setProxy };
 })(window);

@@ -247,6 +247,87 @@ function run() {
     })
 
     .then(function () {
+      console.log('\n— TomTom proxy (anahtar tarayıcıya inmemeli) —');
+      // Bu testte .env'de TOMTOM_API_KEY yok; DB'ye yukarıda 'abc123' yazıldı,
+      // yani kaynak 'client' olmalı ve anahtar bootstrap ile gelmeye devam etmeli.
+      return api('GET', '/api/bootstrap').then(function (r) {
+        check('bootstrap tomtomKeySource bildiriyor', r.body && r.body.tomtomKeySource === 'client',
+          'source=' + (r.body && r.body.tomtomKeySource));
+        check('kullanıcı girdiği anahtar tarayıcıya gönderiliyor (eski davranış)',
+          r.body && r.body.tomtomApiKey === 'abc123');
+      });
+    })
+    .then(function () {
+      return api('POST', '/api/tomtom/route-leg', {
+        origin: { lat: 41.0, lng: 29.0 }, destination: { lat: 41.1, lng: 29.1 }
+      }, null).then(function (r) {
+        check('proxy token olmadan 401 döner', r.status === 401, 'status=' + r.status);
+      });
+    })
+    .then(function () {
+      return api('POST', '/api/tomtom/route-leg', { origin: { lat: 'x' }, destination: null })
+        .then(function (r) {
+          check('geçersiz koordinat 400 döner', r.status === 400, 'status=' + r.status);
+        });
+    })
+    .then(function () {
+      // Anahtarı temizleyip "hiç anahtar yok" durumunu test et
+      return api('PATCH', '/api/settings/tomtom-key', { tomtomApiKey: '' }).then(function () {
+        return api('GET', '/api/bootstrap');
+      }).then(function (r) {
+        check('anahtar silinince kaynak none olur', r.body && r.body.tomtomKeySource === 'none',
+          'source=' + (r.body && r.body.tomtomKeySource));
+        return api('POST', '/api/tomtom/route-leg', {
+          origin: { lat: 41.0, lng: 29.0 }, destination: { lat: 41.1, lng: 29.1 }
+        });
+      }).then(function (r) {
+        check('anahtar yokken proxy 400 ile açıklayıcı hata döner',
+          r.status === 400 && /anahtar/i.test((r.body && r.body.error) || ''),
+          'status=' + r.status + ' body=' + JSON.stringify(r.body));
+      });
+    })
+
+    .then(function () {
+      console.log('\n— sunucu tarafı anahtar (.env) sızmamalı —');
+      // server/tomtom.js env'i her çağrıda okuduğu için burada çalışma
+      // anında ayarlamak, sunucuyu .env ile başlatmakla aynı etkiyi verir.
+      process.env.TOMTOM_API_KEY = 'SUNUCU-GIZLI-ANAHTAR';
+      return api('PATCH', '/api/settings/tomtom-key', { tomtomApiKey: 'kullanici-anahtari' })
+        .then(function () { return api('GET', '/api/bootstrap'); })
+        .then(function (r) {
+          check('kaynak server olarak bildiriliyor', r.body && r.body.tomtomKeySource === 'server',
+            'source=' + (r.body && r.body.tomtomKeySource));
+          check('sunucu anahtarı tarayıcıya GÖNDERİLMİYOR',
+            r.body && r.body.tomtomApiKey === '',
+            'gelen=' + JSON.stringify(r.body && r.body.tomtomApiKey));
+          check('yanıtın hiçbir yerinde gizli anahtar geçmiyor',
+            r.raw.indexOf('SUNUCU-GIZLI-ANAHTAR') === -1);
+          check('kullanıcının DB\'deki anahtarı da bu modda gizleniyor',
+            r.raw.indexOf('kullanici-anahtari') === -1);
+        })
+        .then(function () {
+          delete process.env.TOMTOM_API_KEY;
+          return api('PATCH', '/api/settings/tomtom-key', { tomtomApiKey: '' });
+        });
+    })
+
+    .then(function () {
+      console.log('\n— yakıt fiyatı ucu —');
+      return api('GET', '/api/fuel-price').then(function (r) {
+        // Ağ erişimi olmayabilir; iki kabul edilebilir sonuç var:
+        // 200 + fiyat, ya da 503 + açıklama. Asla 500 patlaması olmamalı.
+        check('/api/fuel-price 200 ya da 503 döner (asla 500)',
+          r.status === 200 || r.status === 503, 'status=' + r.status);
+        if (r.status === 200) {
+          check('fiyat yanıtı dizel/benzin alanlarını taşıyor',
+            r.body && ('dizel' in r.body) && ('benzin' in r.body), JSON.stringify(r.body));
+        } else {
+          console.log('    (not: kaynak servise ulaşılamadı, 503 döndü — beklenen bir durum)');
+        }
+      });
+    })
+
+    .then(function () {
       console.log('\n— statik dosya sunumu —');
       return fetch(baseUrl + '/index.html').then(function (res) {
         check('index.html aynı origin\'den servis edilir (CORS gereksiz)', res.status === 200, 'status=' + res.status);

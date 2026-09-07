@@ -20,7 +20,7 @@ tss-rota-panel/
 ├── js/
 │   ├── data.js         lokasyon/araç/durak verisi, Excel içe aktarma, backend senkronu
 │   ├── osrm.js         gerçek yol mesafesi ve güzergah geometrisi
-│   ├── tomtom.js       opsiyonel canlı trafik (kullanıcı kendi API key'ini girerse)
+│   ├── tomtom.js       opsiyonel canlı trafik (anahtar sunucuda ya da kullanıcıda)
 │   ├── weather.js      durak bazlı hava durumu uyarıları (Open-Meteo)
 │   ├── fuelprice.js    ulusal ortalama akaryakıt fiyatı
 │   ├── optimizer.js    kapasiteli sıralama optimizasyonu (tek araç, tek grup)
@@ -31,6 +31,8 @@ tss-rota-panel/
     ├── index.js        REST endpoint'leri + statik dosya sunumu + token kontrolü
     ├── db.js           SQLite şeması
     ├── store.js        CRUD + doğrulama (js/data.js ile aynı kurallar)
+    ├── tomtom.js       TomTom proxy'si — API anahtarı tarayıcıya inmez
+    ├── fuelprice.js    yakıt fiyatını kaynaktan doğrudan çeker (CORS engeli yok)
     └── scripts/        localStorage içe aktarma + otomatik testler
 ```
 
@@ -121,12 +123,16 @@ olarak hesaplanır:
   ortalamasına yakın bir varsayılanla gelir — gerçek filo verisi (yakıt fişi)
   girildikçe güncellenmesi önerilir.
 - **Fiyat:** Türkiye'deki ücretsiz akaryakıt fiyat servisleri tarayıcıdan CORS
-  nedeniyle doğrudan çağrılamadığından, bu projenin GitHub reposunda
-  zamanlanmış bir GitHub Actions iş akışı (`.github/workflows/fuel-price.yml`)
-  günde birkaç kez ulusal ortalama motorin/benzin fiyatını çekip
-  `data/fuel-price.json`'a yazar; panel bu dosyayı okur. Trafik Ayarları >
-  Yakıt bölümünden elle bir TL/L fiyatı girilirse o her zaman önceliklidir.
-  Detaylar için bkz. TEKNIK-DOKUMAN.md §10.4.
+  nedeniyle doğrudan çağrılamıyor. Bu yüzden:
+  - **Backend çalışıyorsa** fiyatı sunucu kaynaktan doğrudan çeker
+    (`GET /api/fuel-price`, 6 saatlik önbellek) — CORS bir tarayıcı kısıtı
+    olduğu için sunucuda böyle bir engel yok.
+  - **Backend yoksa** (`file://`) devreye GitHub Actions iş akışı
+    (`.github/workflows/fuel-price.yml`) girer: fiyatı 6 saatte bir çekip
+    `data/fuel-price.json`'a yazar, panel de o dosyayı okur.
+
+  Trafik Ayarları > Yakıt bölümünden elle bir TL/L fiyatı girilirse o her
+  zaman önceliklidir. Detaylar: TEKNIK-DOKUMAN.md §10.4.
 
 ## Algoritma
 
@@ -189,7 +195,7 @@ almaya karar verirse, önce şunları çözmesi gerekiyor:
     kimlik veya rol/yetki yönetimi yok — küçük bir LAN ekibi için tasarlandı.
 
 - **Otomatik test durumu:** backend ve `js/data.js`'in senkronizasyon katmanı
-  için testler var (`cd server && npm test` → 80 test: REST yüzeyi, doğrulama,
+  için testler var (`cd server && npm test` → 98 test: REST yüzeyi, doğrulama,
   outbox/çevrimdışı davranışı, `file://` modu). Ancak **`js/optimizer.js` ve
   `js/fleet.js` (rota/kümeleme algoritması) hâlâ testsiz** — bu iki dosyada
   değişiklik yapmadan önce birkaç senaryo testi (bilinen giriş/mesafe matrisi →

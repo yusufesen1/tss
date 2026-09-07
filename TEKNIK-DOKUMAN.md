@@ -153,7 +153,7 @@ teorik olarak Node.js'te de (tarayıcı olmadan) test edilebilir/çalıştırıl
 | Kalıcılık (kurulumsuz mod) | `localStorage` (tek anahtar: `tss-rota-panel-v1`, outbox: `tss-outbox-v1`) | Backend çalışmıyorsa tek kalıcılık katmanı |
 | Kalıcılık (ekip modu) | SQLite (`better-sqlite3`, tek dosya `server/data/tss.db`) | Gerçek veri kaynağı; `localStorage` önbelleğe düşer — bkz. §5.4, §15 |
 | Backend (opsiyonel) | Node.js + [Express](https://expressjs.com/) 5 | `server/index.js` — REST + statik sunum + `X-TSS-Token`; frontend ile aynı origin, CORS yok |
-| Test altyapısı | `server/scripts/` — 80 test (smoke 46 + sync 34), `cd server && npm test` | `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz, bkz. §13/§14 |
+| Test altyapısı | `server/scripts/` — 98 test (smoke 58 + sync 40), `cd server && npm test` | `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz, bkz. §13/§14 |
 | Build/bundler | **Yok** | Dosyalar doğrudan `<script>` ile sırayla yükleniyor; backend'de de derleme adımı yok |
 
 ---
@@ -165,23 +165,25 @@ index.html          DOM iskeleti + script yükleme sırası
 styles.css           Tüm görsel tasarım (tasarım sistemi: bkz. "Turkish Support
                       Services — Design System.md")
 js/
-  data.js    (879 satır)  Veri modeli, localStorage, Excel satır normalizasyonu,
+  data.js    (895 satır)  Veri modeli, localStorage, Excel satır normalizasyonu,
                            TomTom key + BACKEND SENKRONİZASYONU (outbox, bkz. §5.4)
   osrm.js    ( 75 satır)  OSRM HTTP istemcisi (matrix + route)
-  tomtom.js  ( 65 satır)  TomTom Routing API istemcisi (canlı trafikli tekil bacak sorgusu)
+  tomtom.js  (101 satır)  TomTom istemcisi — backend proxy'si varsa oradan, yoksa doğrudan
   weather.js (131 satır)  Open-Meteo istemcisi + WMO kod → uyarı çevirisi
-  fuelprice.js ( 63 satır) data/fuel-price.json istemcisi (ulusal ortalama TL/L, bkz. §10.4)
+  fuelprice.js ( 82 satır) Yakıt fiyatı — backend varsa /api/fuel-price, yoksa GitHub (§10.4)
   optimizer.js (367 satır) TEK ARAÇ rota sıralama algoritması (+ costMetric: mesafe/süre)
   fleet.js   (599 satır)  ÇOKLU ARAÇ kümeleme + atama + büyük durak bölüştürme + canlı trafik replay
   exporter.js (472 satır) Excel/PDF üretimi
-  app.js    (~2515 satır) UI orkestrasyonu — en büyük dosya, diğer 8 modülü bağlar
+  app.js    (~2550 satır) UI orkestrasyonu — en büyük dosya, diğer 8 modülü bağlar
 vendor/               Üçüncü parti kütüphaneler (hepsi yerel, CDN yok)
 server/               OPSİYONEL backend (Express + SQLite) — bkz. §15
-  index.js   (144 satır)  REST endpoint'leri, X-TSS-Token kontrolü, statik dosya sunumu
+  index.js   (175 satır)  REST endpoint'leri, X-TSS-Token kontrolü, statik dosya sunumu
   db.js      (174 satır)  SQLite şeması + satır ↔ frontend nesnesi dönüşümleri
   store.js   (265 satır)  CRUD + doğrulama (js/data.js ile birebir aynı kurallar)
+  tomtom.js  (103 satır)  TomTom proxy'si — anahtar sunucuda kalır (§10.3, §12)
+  fuelprice.js ( 85 satır) Yakıt fiyatı, kaynaktan doğrudan + 6 saatlik önbellek (§10.4)
   defaults.js ( 45 satır) js/data.js DEFAULT_* sabitlerinin kopyası (ilk tohumlama)
-  scripts/                localStorage içe aktarma + smoke (46) ve sync (34) testleri
+  scripts/                localStorage içe aktarma + smoke (58) ve sync (40) testleri
 ```
 
 ### Dosya sorumlulukları (tek satır özet)
@@ -900,13 +902,31 @@ sadece bir toast uyarısı (`'TomTom canlı trafik verisine ulaşılamadı…'`)
 gösterilir, planlama asla başarısız olmaz. Bu, projenin genel "kısıt
 sağlanamasa da her zaman bir rota üret" felsefesiyle tutarlı.
 
-**Güvenlik notu:** Proje backend'siz olduğu için API key kaçınılmaz olarak
-tarayıcıdan (Network sekmesinde, istek URL'sinde) görünür durumdadır. Bu,
-key'i kaynak koduna sabit yazmaktan **farklıdır**: key kullanıcı tarafından
-arayüzden (Trafik Ayarları → TomTom API Key, `type="password"` input) girilir,
-sadece o tarayıcının `localStorage`'ında tutulur (bkz. §5), hiçbir dosyaya/
-repoya gömülmez. Yine de TomTom panelinden key'e **domain kısıtlaması**
-eklenmesi önerilir (bkz. §12).
+**Anahtarın yeri — iki mod (§15):**
+
+| | Backend YOK (`file://`) | Backend VAR, `server/.env` → `TOMTOM_API_KEY` |
+|---|---|---|
+| Anahtarı kim tutar | Kullanıcı, arayüzden girer; o tarayıcının `localStorage`'ı | Sunucu; tarayıcıya **hiç inmez** |
+| İsteği kim atar | Tarayıcı → TomTom (anahtar istek URL'sinde görünür) | Tarayıcı → kendi backend'i → TomTom |
+| `bootstrap` yanıtı | Anahtarı içerir | `tomtomApiKey: ''` + `tomtomKeySource: 'server'` |
+| Arayüzde | Alan doldurulmuş görünür | Alan boş, altında "sunucuda tanımlı" notu |
+
+Backend varken proxy ucu: `POST /api/tomtom/route-leg` (gövde:
+`{origin:{lat,lng}, destination:{lat,lng}}`) — dönen şekil `js/tomtom.js`'in
+beklediğiyle birebir aynıdır, bu yüzden `routeLeg()`'in imzası ve
+`js/app.js`'teki çağrı noktaları değişmedi. `js/tomtom.js` proxy'yi
+`setProxy()` ile öğrenir (aynı desen: `TSSOsrm.setBase()`); `js/app.js`
+`init()` içinde bir kez bağlar.
+
+> **Dikkat — "anahtar var mı?" kontrolü:** sunucu tarafı anahtarda
+> `getTomTomApiKey()` boş string döner ama özellik **kullanılabilir**
+> durumdadır. Bu yüzden gate kontrolleri `D.hasTomTomKey()` ile yapılır;
+> boş string kontrolü yapan yeni kod özelliği yanlışlıkla devre dışı
+> bırakır.
+
+Anahtar kullanıcı tarafından arayüzden girilmişse (eski/`file://` davranışı)
+her iki modda da TomTom panelinden key'e **domain kısıtlaması** eklenmesi
+önerilir (bkz. §12).
 
 ### 10.4 Yakıt fiyatı (`fuelprice.js`) — GitHub Actions üzerinden otomatik, CORS engeli nedeniyle dolaylı
 
@@ -942,6 +962,17 @@ gerçek zamanlı kadar güncel kalıyor. Bu yaklaşımın projenin "backend'siz"
 felsefesine (bkz. §1) diğer alternatiflerden (Cloudflare Workers/Vercel gibi
 bir proxy fonksiyonu) daha yakın olduğuna karar verildi: hiçbir sunucu/hesap/
 fatura riski yok, sadece bir GitHub Actions iş akışı.
+
+**Backend varsa bu dolambaç gereksiz:** CORS bir *tarayıcı* kısıtıdır; sunucu
+kaynağı doğrudan çağırabilir. `server/fuelprice.js` bunu yapar ve sonucu
+6 saatlik bellek-içi önbellekle `GET /api/fuel-price` üzerinden sunar
+(`{dizel, benzin, updatedAt, source}`). `js/fuelprice.js` backend varken bu
+uca gider (`setProxy()`, TomTom'daki desenin aynısı), yoksa yukarıdaki
+GitHub yoluna düşer. Kazanç: repo bir GitHub uzak sunucusuna bağlı olmak
+zorunda değil, Actions'ın çalışmasına bağımlılık kalkıyor ve hardcoded
+`raw.githubusercontent.com/<owner>/<repo>` adresi (repo taşınırsa kırılırdı)
+devreden çıkıyor. **GitHub Actions akışı kaldırılmadı** — `file://` ile
+kullanılan kurulumlar için hâlâ tek yol o.
 
 **Best-effort, weather.js ile aynı felsefe:** `fetchNational()` ağ hatası,
 dosya henüz oluşmamış (ilk kurulumda `data/fuel-price.json` yoksa) ya da
@@ -1044,14 +1075,23 @@ tabloyu **canlı** yeniden çizer.
   **authentication sistemi değildir**: kullanıcı kimliği, rol/yetki ve
   denetim izi yoktur — küçük, güvenilen bir LAN ekibi için v1 kapısıdır.
   İnternete açılacaksa gerçek kimlik doğrulama ve HTTPS gerekir.
-- **TomTom API key:** `localStorage`'da düz metin olarak saklanır (diğer
-  hiçbir alan gibi şifrelenmez) ve her istekte URL query string'i olarak
-  (Network sekmesinde görünür şekilde) gönderilir — sunucu tarafı bir proxy
-  olmadığı için kaçınılmaz bir mimari sınır. Aynı tarayıcıyı/cihazı paylaşan
-  başka biri bu key'i DevTools'tan okuyabilir. Azaltıcı önlem: key sahibi
-  TomTom Developer Portal'dan key'e **domain/referrer kısıtlaması**
-  eklemeli, böylece key başka bir yerden çalınsa bile sadece bu uygulamanın
-  çalıştığı origin'den kullanılabilir kalır (bkz. §10.3).
+- **TomTom API key — artık sunucuda tutulabilir:** `server/.env` içindeki
+  `TOMTOM_API_KEY` doldurulursa anahtar **tarayıcıya hiç inmez**;
+  `/api/bootstrap` yanıtı onu içermez (`tomtomKeySource: 'server'`), istekler
+  `POST /api/tomtom/route-leg` proxy'si üzerinden gider ve TomTom çağrısını
+  sunucu yapar. Otomatik testte bu doğrulanıyor (yanıtın hiçbir yerinde
+  anahtar geçmemeli).
+  Doldurulmazsa eski davranış geçerlidir: anahtar kullanıcı tarafından
+  arayüzden girilir, `localStorage`'da düz metin durur ve her istekte URL
+  query string'inde (Network sekmesinde görünür şekilde) gider — aynı
+  tarayıcıyı paylaşan biri DevTools'tan okuyabilir. Bu modda azaltıcı
+  önlem: TomTom Developer Portal'dan key'e **domain/referrer kısıtlaması**
+  eklemek (bkz. §10.3).
+- **Sunucu tarafı sırların repoya girmemesi:** `server/.env` (hem `APP_TOKEN`
+  hem `TOMTOM_API_KEY`) `.gitignore`'da; repoda yalnızca değerleri boş olan
+  `server/.env.example` var. Proxy hata mesajlarında da anahtar maskeleniyor
+  (`server/tomtom.js`), aksi halde TomTom'un hata metni anahtarı istemciye
+  geri sızdırabilirdi.
 
 ---
 
@@ -1072,8 +1112,8 @@ bölümleriyle birebir tutarlı; burada teknik gerekçeleriyle özetleniyor.)*
 | Büyük durak bölüştürme sezgiseldir, kesin optimum değil | `distributeBigStop()` en-yakın-kümeden-başlayarak açgözlü (greedy) doldurma yapar (bkz. §8.6), gerçek bir VRP çözücü değil | Nadir kombinasyonlarda (örn. `initialLoad` bir kümenin ihtiyacını tek başına her aracın kapasitesinin üstüne çıkarıyorsa, ya da tüm arzı sağlayan tek bir büyük yükleme normal boşaltmalardan coğrafi olarak uzaksa) hâlâ önlenebilir olmayan bir kalıntı ihlal görülebilir — filo toplamda yeterliyken bile. Algoritma bunu her zaman **mümkün olan en az** ihlale indirger ve `warning` alanında açıkça bildirir, ama sıfıra indirme garantisi yoktur |
 | Trafik verisi kısmen gerçek | "En Az Süre" modunda TomTom opsiyonel olarak canlı trafik verir (§10.3), ama **varsayılan mod "En Kısa Mesafe"** ve TomTom key girilmediği sürece hâlâ sabit zaman dilimi çarpanları kullanılıyor | Kullanıcı key girip "En Az Süre"yi seçmezse hâlâ kaba tahmin; TomTom ücretli/kotalı olduğundan kesintisiz canlı trafik garanti değil |
 | TomTom entegrasyonu opsiyonel/best-effort | Key yoksa veya istek başarısız olursa sessizce OSRM'e düşülür | Kullanıcı "En Az Süre"yi seçse de key girmemişse fiilen hâlâ OSRM'in statik tahminiyle çalışılır — arayüzde bu durum sadece toast ile bildirilir, tabloda ayrıca işaretlenmez |
-| Otomatik test **kısmen** var | `server/` ve `js/data.js` senkron katmanı için 80 test (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
-| Yakıt fiyatı dolaylı/gecikmeli | Kaynak servis CORS'a kapalı olduğundan tarayıcı `data/fuel-price.json`'ı okuyor, o dosya da GitHub Actions ile 6 saatte bir güncelleniyor (bkz. §10.4) | Repo bir GitHub uzak sunucusuna (`origin`) bağlı değilse ya da Actions devre dışı bırakılırsa otomatik fiyat hiç gelmez, kullanıcı elle girmek zorunda kalır — uygulama yine çalışır, sadece "Fiyat girilmedi" gösterir |
+| Otomatik test **kısmen** var | `server/` ve `js/data.js` senkron katmanı için 98 test (`cd server && npm test`); `optimizer.js`/`fleet.js` ve arayüz akışları hâlâ testsiz | Algoritma değişikliklerinde ve UI akışlarında regresyon elle test edilmeli |
+| Yakıt fiyatı dolaylı/gecikmeli — **yalnızca backend'siz kullanımda** | Backend varsa sunucu kaynağı doğrudan çağırıp `GET /api/fuel-price` ile sunuyor (§10.4). `file://` ile açıldığında ise hâlâ GitHub Actions + `data/fuel-price.json` yolu geçerli | Backend'siz kurulumda repo GitHub'a bağlı değilse ya da Actions kapalıysa otomatik fiyat gelmez, kullanıcı elle girer — uygulama yine çalışır, "Fiyat girilmedi" gösterir |
 | Yakıt tüketimi varsayılanı tahmini | `DEFAULT_VEHICLES.fuelConsumption` üreticinin karma çevrim ortalaması, gerçek/yüklü sahne verisi değil | Gerçek filo verisi (yakıt fişi) girilene kadar yakıt maliyeti tahmini olduğundan sapabilir — araç bazında Araçlar modalından elle düzeltilmesi önerilir |
 
 ---
@@ -1097,10 +1137,10 @@ Kalan öncelik sırası:
    çıktısı; bu iki dosya saf fonksiyonlar olduğu için (DOM'a bağımlı değil)
    test edilmesi kolay, sadece hiç yapılmamış. `server/scripts/`'teki test
    yapısı örnek alınabilir.
-3. **TomTom key'i server-side'a taşı** — backend artık var: `js/tomtom.js`'in
-   `routeLeg` imzası değişmeden, implementasyonu backend'de bir
-   `/api/tomtom/route-leg` proxy'sine döndürülürse key tarayıcıya hiç
-   inmez (§12'deki kalan risk kapanır).
+3. ~~**TomTom key'i server-side'a taşı**~~ — **tamamlandı** (§10.3, §12):
+   `POST /api/tomtom/route-leg` proxy'si eklendi, `routeLeg()` imzası ve
+   `js/app.js` çağrı noktaları değişmedi. `server/.env` → `TOMTOM_API_KEY`
+   doldurulduğunda anahtar tarayıcıya hiç inmiyor.
 4. **Gerçek kimlik doğrulama** — mevcut tek paylaşılan `APP_TOKEN`,
    kullanıcı bazlı kimlik/rol/denetim izi gerektiğinde yetersiz kalır (§12).
 5. Yasak güzergah kısıtı gibi README'de "sonraki faz" olarak işaretlenmiş
@@ -1146,9 +1186,9 @@ Buradaki özet, mimari kararların gerekçesi:
 - **Mevcut veriyi taşıma:** `node server/scripts/import-localstorage.js
   <yedek.json>` — tarayıcı konsolundan alınan `tss-rota-panel-v1` içeriğini
   SQLite'a aktarır, tekrar çalıştırmak güvenlidir.
-- **Testler:** `cd server && npm test` → `smoke-test.js` (46 test: REST
+- **Testler:** `cd server && npm test` → `smoke-test.js` (58 test: REST
   yüzeyi, erişim kontrolü, doğrulama, ayar merge'i, geçmiş JSON round-trip'i)
-  ve `sync-test.js` (34 test: **gerçek `js/data.js`** Node içinde sahte
+  ve `sync-test.js` (40 test: **gerçek `js/data.js`** Node içinde sahte
   `window`/`localStorage` ile gerçek backend'e karşı — senkron sözleşme,
   outbox, çevrimdışı davranış, `file://` modunda hiç ağ isteği yapılmaması).
 

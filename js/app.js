@@ -695,8 +695,11 @@
       })
       .then(function (plan) {
         if (costMetric !== 'duration') return plan;
+        // Anahtar sunucuda tanımlıysa buraya boş gelir ama özellik yine
+        // kullanılabilir (istek backend proxy'sinden gider) — bu yüzden
+        // kontrol hasTomTomKey() ile yapılıyor.
+        if (!D.hasTomTomKey()) return plan; // key hiç yok: sessizce OSRM ile devam
         var apiKey = D.getTomTomApiKey();
-        if (!apiKey) return plan; // "En Az Süre" seçili ama key girilmemiş: sessizce OSRM ile devam
 
         setLoading(true, 'Canlı trafik verisi alınıyor (TomTom)…');
         return Promise.all(plan.groups.map(function (group) { return refineGroupWithLiveTraffic(plan, group, apiKey); }))
@@ -834,8 +837,8 @@
     var otherMetric = otherCostMetric(activeMetric);
     var otherAssignment = computeMetricAssignment(otherMetric);
 
-    var apiKey = D.getTomTomApiKey();
-    var needsTomTom = otherMetric === 'duration' && !!apiKey && !!TomTom;
+    var apiKey = D.getTomTomApiKey();   // sunucu tarafı anahtarda boş kalır, bkz. hasTomTomKey
+    var needsTomTom = otherMetric === 'duration' && D.hasTomTomKey() && !!TomTom;
 
     if (!needsTomTom) {
       renderCompareModal(activeMetric, otherMetric, otherAssignment);
@@ -2021,6 +2024,25 @@
     if (select._tssSync) select._tssSync();
   }
 
+  // Anahtar sunucuda (server/.env) tanımlıysa alan boş görünür — kullanıcı
+  // "girmemişim" sanmasın diye durumu açıkça yazıyoruz. Alan yine de
+  // kullanılabilir kalır: girilen değer bu tarayıcı için geçerli olur ama
+  // sunucudaki anahtar önceliklidir.
+  function renderTomTomKeyHint() {
+    var hint = $('tomtomKeyHint');
+    if (!hint) return;
+    var source = D.getTomTomKeySource ? D.getTomTomKeySource() : 'none';
+    if (source === 'server') {
+      hint.textContent = 'Anahtar sunucuda tanımlı — bu tarayıcıya hiç indirilmiyor, ' +
+        'istekler sunucu üzerinden yapılıyor. Buraya bir şey girmenize gerek yok.';
+      hint.hidden = false;
+      $('inpTomTomKey').placeholder = 'Sunucuda tanımlı';
+    } else {
+      hint.hidden = true;
+      $('inpTomTomKey').placeholder = "TomTom Developer Portal'dan alınan key";
+    }
+  }
+
   function renderTrafficSettings() {
     var t = D.getTrafficSettings();
     $('trafficEnabled').checked = !!t.enabled;
@@ -2035,6 +2057,7 @@
     $('trafficNightEnd').value = t.night.end;
     $('trafficNightFactor').value = t.night.factor;
     $('inpTomTomKey').value = D.getTomTomApiKey();
+    renderTomTomKeyHint();
 
     var fuel = D.getFuelPriceSettings();
     $('inpFuelDizel').value = fuel.dizelPrice != null ? fuel.dizelPrice : '';
@@ -2460,6 +2483,17 @@
         // Haritadaki çizili rotayı silmemek için yalnızca plan yokken.
         if (!D.state.plan) drawIdleMarkers();
       });
+      // TomTom ve yakıt fiyatı isteklerini de backend üzerinden geçir:
+      // TomTom anahtarı sunucuda kalır (tarayıcıya inmez), yakıt fiyatı
+      // ise GitHub Actions dolambacı olmadan doğrudan kaynaktan gelir.
+      var tokenGetter = function () { return D.getRemoteToken(); };
+      if (TomTom && TomTom.setProxy) {
+        TomTom.setProxy({ url: '/api/tomtom/route-leg', getToken: tokenGetter });
+      }
+      if (FuelPrice && FuelPrice.setProxy) {
+        FuelPrice.setProxy({ url: '/api/fuel-price', getToken: tokenGetter });
+      }
+
       D.onSyncError(function (message, kind) {
         // Anahtar sorunu: sadece uyarı vermek yetmez, kullanıcıya anahtarı
         // girebileceği yeri de açmalıyız (aksi halde panel sessizce yerel

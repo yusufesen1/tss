@@ -198,6 +198,30 @@ function run(D) {
     })
 
     .then(function () {
+      console.log('\n— TomTom anahtar kaynağı (hasTomTomKey) —');
+      // Anahtar yokken
+      return D.syncFromRemote().then(function () {
+        check('anahtar yokken hasTomTomKey false', D.hasTomTomKey() === false);
+        // Kullanıcının girdiği anahtar
+        D.setTomTomApiKey('kullanici-anahtari');
+        check('kullanıcı anahtarı girince true', D.hasTomTomKey() === true);
+        check('getTomTomApiKey anahtarı döndürüyor', D.getTomTomApiKey() === 'kullanici-anahtari');
+        return wait(300);
+      }).then(function () {
+        // Sunucu tarafı anahtar: tarayıcı anahtarı GÖREMEZ ama özellik açık olmalı
+        process.env.TOMTOM_API_KEY = 'SUNUCU-ANAHTARI';
+        return D.syncFromRemote();
+      }).then(function () {
+        check('sunucu anahtarı tarayıcıya inmiyor', D.getTomTomApiKey() === '',
+          'gelen=' + JSON.stringify(D.getTomTomApiKey()));
+        check('kaynak server olarak biliniyor', D.getTomTomKeySource() === 'server');
+        check('hasTomTomKey yine de TRUE (özellik proxy ile çalışır)', D.hasTomTomKey() === true);
+        delete process.env.TOMTOM_API_KEY;
+        return D.syncFromRemote();
+      });
+    })
+
+    .then(function () {
       console.log('\n— ayarlar —');
       D.updateTrafficSettings({ enabled: false, morning: { factor: 3.1 } });
       D.updateFuelPriceSettings({ dizelPrice: 91.5 });

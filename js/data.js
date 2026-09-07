@@ -149,6 +149,16 @@
     return state.tomtomApiKey || '';
   }
 
+  // Anahtar sunucuda (server/.env) tanımlıysa tarayıcıya HİÇ inmez —
+  // bu durumda getTomTomApiKey() boş döner ama özellik yine kullanılabilir
+  // (istek backend proxy'si üzerinden gider). "Anahtar var mı?" sorusunun
+  // doğru cevabı bu yüzden bu fonksiyondur, boş string kontrolü değil.
+  function hasTomTomKey() {
+    return !!(state.tomtomApiKey || tomtomKeySource === 'server');
+  }
+
+  function getTomTomKeySource() { return tomtomKeySource; }
+
   function setTomTomApiKey(key) {
     state.tomtomApiKey = String(key || '').trim();
     save();
@@ -563,6 +573,9 @@
   var MAX_ATTEMPTS = 50;    // kalıcı olarak başarısız bir işlem kuyruğu sonsuza dek şişirmesin
 
   var remote = null;         // { baseUrl: string, token: string }
+  // 'none' | 'client' (kullanıcı arayüzden girdi) | 'server' (server/.env'de,
+  // tarayıcıya hiç inmiyor). Sunucudan bootstrap ile gelir.
+  var tomtomKeySource = 'none';
   var outbox = [];
   var flushing = false;
   var retryTimer = null;
@@ -689,6 +702,7 @@
     if (data.traffic) state.traffic = data.traffic;
     if (data.fuel) state.fuel = data.fuel;
     if (typeof data.tomtomApiKey === 'string') state.tomtomApiKey = data.tomtomApiKey;
+    if (typeof data.tomtomKeySource === 'string') tomtomKeySource = data.tomtomKeySource;
 
     // Silinen bir lokasyona bağlı taslak duraklar ortada kalmasın
     var validIds = {};
@@ -810,6 +824,8 @@
     // --- okuma (backend'den etkilenmez, hepsi bellekten anında döner) ---
     getTrafficSettings: getTrafficSettings,
     getTomTomApiKey: getTomTomApiKey,
+    hasTomTomKey: hasTomTomKey,
+    getTomTomKeySource: getTomTomKeySource,
     getFuelPriceSettings: getFuelPriceSettings,
     getLocation: getLocation,
     getVehicle: getVehicle,

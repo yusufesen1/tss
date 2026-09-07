@@ -61,10 +61,24 @@ edilmez**).
 | PATCH | `/api/settings/traffic` | `updateTrafficSettings` |
 | PATCH | `/api/settings/fuel` | `updateFuelPriceSettings` |
 | PATCH | `/api/settings/tomtom-key` | `setTomTomApiKey` |
+| POST | `/api/tomtom/route-leg` | TomTom proxy'si — anahtar sunucuda kalır |
+| GET | `/api/fuel-price` | Ulusal ortalama yakıt fiyatı (6 saatlik önbellek) |
 
 Taslak duraklar (`stops`) ve hesaplanan `plan` **backend'e taşınmaz** —
 bugünkü gibi tarayıcıda, sayfa yenilenince sıfırlanan geçici veri
 olarak kalır.
+
+## TomTom anahtarı (opsiyonel)
+
+`.env` içindeki `TOMTOM_API_KEY` doldurulursa canlı trafik anahtarı
+**tarayıcıya hiç inmez**: panel isteği `/api/tomtom/route-leg` ucuna yapar,
+TomTom'a asıl çağrıyı sunucu gönderir. `/api/bootstrap` yanıtı bu modda
+anahtarı içermez, yalnızca `tomtomKeySource: "server"` bilgisini taşır ve
+Trafik Ayarları'ndaki alan "sunucuda tanımlı" notunu gösterir.
+
+Boş bırakılırsa eski davranış sürer: kullanıcı anahtarı arayüzden girer,
+anahtar o tarayıcıda saklanır ve istek URL'sinde görünür (bu durumda TomTom
+panelinden anahtara domain kısıtlaması eklenmesi önerilir).
 
 ## Veritabanı
 
