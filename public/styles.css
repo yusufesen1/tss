@@ -625,7 +625,11 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
    Tables
    ========================================================= */
 .table-wrap{ flex: 1 1 auto; overflow-x: auto; overflow-y: scroll; padding: 12px 16px 16px; min-height: 0; }
-.data-table{ width: 100%; border-collapse: collapse; font-size: 12px; }
+/* border-collapse: collapse + position: sticky (bkz. thead th aşağıda) bir
+   arada kullanılınca Chromium'da sticky başlık kayıyor/kırılıyor — bilinen
+   bir tarayıcı hatası. separate + border-spacing: 0 aynı görünümü (tek
+   piksellik çizgiler) korurken sticky'yi düzgün çalıştırıyor. */
+.data-table{ width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .data-table thead th{
   position: sticky; top: 0;
   background: var(--n-50);
@@ -637,6 +641,16 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   border-bottom: 1px solid var(--n-300);
   white-space: nowrap;
 }
+/* Sticky "top: 0", en yakın kaydırma atasının PADDING'i bitince değil,
+   PADDING dahil üst kenarında yapışması gerekir — ama Chromium'da bu
+   kaydırma atasının kendi padding-top'u kadar bir boşluk bırakıyor
+   (sticky, içerik kenarına göre hesaplanıyor). O boşlukta veri satırları
+   görünmeye devam ettiği için başlık "kaymış"/satırlar üstte çıkmış gibi
+   görünüyordu. Kaydırma atasının padding-top'u kadar negatif bir ofsetle
+   telafi ediyoruz — atanın kendi padding'i değişmiyor, sadece başlığın
+   yapıştığı nokta gerçek üst kenara çekiliyor. */
+.modal-body .data-table thead th{ top: -20px; }   /* .modal-body padding-top: 20px */
+.table-wrap .data-table thead th{ top: -12px; }   /* .table-wrap  padding-top: 12px */
 .data-table tbody td{
   padding: 8px;
   border-bottom: 1px solid var(--n-200);
