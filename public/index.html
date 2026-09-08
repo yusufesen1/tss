@@ -481,18 +481,29 @@
 
 <!-- ============ ROTA ONAYI: NOT EKLE ============ -->
 <div class="modal-backdrop" id="modalApprove" hidden>
-  <div class="modal">
+  <div class="modal modal-wide">
     <div class="modal-header">
       <h3 class="modal-title">Rotayı Onayla</h3>
       <button class="btn btn-neutral btn-sm" data-close-modal="modalApprove">Kapat</button>
     </div>
     <div class="modal-body">
       <p class="fuel-approve-summary" id="approveFuelSummary" hidden></p>
-      <div class="field-group">
-        <label class="label" for="inpApproveNote">Not (opsiyonel)</label>
-        <textarea id="inpApproveNote" class="input" rows="4"
-          placeholder="Örn. Bu araç 3.5 tonun üstünde, X köprüsünden geçemez. Y bölgesine gece 22:00'den sonra giriş yok."></textarea>
-        <p class="hint">Bu not PDF çıktısına eklenir ve sefer geçmişinde saklanır.</p>
+      <div class="approve-cols">
+        <!-- Rota üzerinde olay yoksa bu sütun tamamen gizlenir, not sütunu
+             tam genişlik kaplar (bkz. styles.css: #approveTrafficCol[hidden] + …) -->
+        <div class="approve-col-traffic" id="approveTrafficCol" hidden>
+          <div class="traffic-warnings" id="approveTrafficWarnings">
+            <strong class="traffic-warnings-title">Rota Üzerinde Trafik Olayı</strong>
+          </div>
+        </div>
+        <div class="approve-col-note">
+          <div class="field-group">
+            <label class="label" for="inpApproveNote">Not (opsiyonel)</label>
+            <textarea id="inpApproveNote" class="input" rows="4"
+              placeholder="Örn. Bu araç 3.5 tonun üstünde, X köprüsünden geçemez. Y bölgesine gece 22:00'den sonra giriş yok."></textarea>
+            <p class="hint">Bu not PDF çıktısına eklenir ve sefer geçmişinde saklanır.</p>
+          </div>
+        </div>
       </div>
       <button class="btn btn-primary btn-block" id="btnConfirmApprove">Onayla</button>
     </div>

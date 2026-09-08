@@ -515,6 +515,16 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
   color: var(--n-600);
 }
 
+/* Rotayı Onayla modalı — solda rota üzerindeki trafik olayları (varsa),
+   sağda onay notu. Olay yoksa #approveTrafficCol [hidden] olur ve not
+   sütunu bitişik kardeş seçiciyle tam genişliğe yayılır. */
+.approve-cols{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+#approveTrafficCol[hidden] + .approve-col-note{ grid-column: 1 / -1; }
+.approve-col-traffic .traffic-warnings{ margin: 0; }
+@media (max-width: 620px){
+  .approve-cols{ grid-template-columns: 1fr; }
+}
+
 /* Filo kapasitesi yetersiz kaldığında (tüm araçlar birleştirilse bile talebi
    karşılayamıyorsa) gösterilen uyarı — hava durumundan ayırt etmek için
    marka kırmızısı kullanılıyor (bu gerçek bir kısıt ihlali riski). */

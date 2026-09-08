@@ -24,6 +24,11 @@
   // OSRM isteği atmadan) hesaplayabilsin diye. planRoute() başarıyla matrix
   // aldığında set edilir, clearPlan()'da temizlenir.
   var lastPlanningContext = null;
+  // checkTrafficIncidents()'ın en son çektiği liste — Rotayı Onayla modalı
+  // açılırken yeniden sorgu atmadan aynı sonucu gösterebilsin diye (bkz.
+  // renderTrafficIncidents / renderApproveTrafficIncidents). null = henüz
+  // hiç sorgulanmadı; { list: [], ... } = sorgulandı, olay yok.
+  var lastTrafficIncidents = null;
   // js/fuelprice.js'ten (varsa) çekilen ulusal ortalama TL/L fiyatı — sadece
   // bu oturumda, bellekte tutulur (kalıcı değil). Kullanıcının Trafik
   // Ayarları > Yakıt bölümünden ELLE girdiği fiyat (D.getFuelPriceSettings())
@@ -1186,6 +1191,9 @@
   function checkTrafficIncidents(plan) {
     var box = $('trafficWarnings');
     box.hidden = true;
+    // Yeni plan için sorgu henüz sonuçlanmadı — bu arada onay modalı açılırsa
+    // önceki (artık geçersiz olabilecek) plana ait liste gösterilmesin.
+    lastTrafficIncidents = null;
     if (!TomTom || !TomTom.incidentsOnRoute || !D.hasTomTomKey()) return;
 
     // Tüm grupların çizilmiş güzergahını tek bir çizgide birleştir
@@ -1211,36 +1219,48 @@
     return where || inc.description || 'Konum belirtilmemiş';
   }
 
+  // Tek bir olay satırı — üst banttaki özet ve Rotayı Onayla modalındaki
+  // tam liste AYNI DOM yapısını kullanır (bkz. renderTrafficIncidents /
+  // renderApproveTrafficIncidents), tutarsız görünüm olmasın diye.
+  function buildIncidentRow(inc) {
+    var row = document.createElement('p');
+    row.className = 'traffic-warning-item';
+
+    var kind = document.createElement('span');
+    kind.className = 'tw-kind';
+    kind.textContent = inc.category;
+    row.appendChild(kind);
+
+    var where = document.createElement('span');
+    where.textContent = incidentLabel(inc);
+    row.appendChild(where);
+
+    if (inc.delaySeconds > 0) {
+      var delay = document.createElement('span');
+      delay.className = 'tw-delay';
+      delay.textContent = '+' + durationLabel(inc.delaySeconds);
+      row.appendChild(delay);
+    }
+    return row;
+  }
+
   function renderTrafficIncidents(result) {
+    // Onay modalı açıldığında yeniden sorgu atmadan aynı listeyi göstermek
+    // için saklanıyor (bkz. renderApproveTrafficIncidents). Olay yoksa da
+    // boş dizi olarak saklanır — "henüz hiç sorgulanmadı" (null) ile
+    // "sorguladık, olay yok" ([]) durumları ayrı tutuluyor.
+    lastTrafficIncidents = { list: (result && result.incidents) || [], thresholdMeters: result && result.thresholdMeters };
+
     var box = $('trafficWarnings');
     box.querySelectorAll('.traffic-warning-item, .traffic-warnings-note')
       .forEach(function (node) { node.remove(); });
 
-    var list = (result && result.incidents) || [];
+    var list = lastTrafficIncidents.list;
     if (!list.length) { box.hidden = true; return; }
 
-    // Uzun listeyi bandı şişirmeden göstermek için ilk 6 olay
-    list.slice(0, 6).forEach(function (inc) {
-      var row = document.createElement('p');
-      row.className = 'traffic-warning-item';
-
-      var kind = document.createElement('span');
-      kind.className = 'tw-kind';
-      kind.textContent = inc.category;
-      row.appendChild(kind);
-
-      var where = document.createElement('span');
-      where.textContent = incidentLabel(inc);
-      row.appendChild(where);
-
-      if (inc.delaySeconds > 0) {
-        var delay = document.createElement('span');
-        delay.className = 'tw-delay';
-        delay.textContent = '+' + durationLabel(inc.delaySeconds);
-        row.appendChild(delay);
-      }
-      box.appendChild(row);
-    });
+    // Uzun listeyi bandı şişirmeden göstermek için ilk 6 olay — tamamı
+    // Rotayı Onayla modalında görülebilir (bkz. renderApproveTrafficIncidents).
+    list.slice(0, 6).forEach(function (inc) { box.appendChild(buildIncidentRow(inc)); });
 
     var note = document.createElement('p');
     note.className = 'traffic-warnings-note';
@@ -1252,6 +1272,30 @@
     box.appendChild(note);
 
     box.hidden = false;
+  }
+
+  // Rotayı Onayla modalı açılırken çağrılır: renderTrafficIncidents'ın
+  // zaten çektiği listeyi (yeniden sorgu atmadan) tam olarak gösterir —
+  // üst banttaki 6'lık kısıtlama burada yok, kullanıcı onaylamadan önce
+  // tüm olayları görebilsin diye.
+  function renderApproveTrafficIncidents() {
+    var col = $('approveTrafficCol');
+    var box = $('approveTrafficWarnings');
+    box.querySelectorAll('.traffic-warning-item, .traffic-warnings-note')
+      .forEach(function (node) { node.remove(); });
+
+    var list = lastTrafficIncidents ? lastTrafficIncidents.list : [];
+    if (!list.length) { col.hidden = true; return; }
+
+    list.forEach(function (inc) { box.appendChild(buildIncidentRow(inc)); });
+
+    var note = document.createElement('p');
+    note.className = 'traffic-warnings-note';
+    note.textContent = 'Rota çizgisine ' + lastTrafficIncidents.thresholdMeters +
+      ' m yakınlıktaki olaylar. Karşı şeritteki olaylar da listeye girebilir — yönü kontrol edin.';
+    box.appendChild(note);
+
+    col.hidden = false;
   }
 
   function renderWeatherWarnings(warnings) {
@@ -1699,6 +1743,7 @@
     D.clearStops();
     D.state.plan = null;
     lastPlanningContext = null;
+    lastTrafficIncidents = null;
     renderStops();
     updateCapacity();
     el.planGroups.innerHTML = '';
@@ -2627,6 +2672,7 @@
       if (!D.state.plan) return;
       $('inpApproveNote').value = D.state.plan.note || '';
       renderApproveFuelSummary(D.state.plan);
+      renderApproveTrafficIncidents();
       openModal('modalApprove');
     });
 
