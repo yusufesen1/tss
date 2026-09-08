@@ -1176,6 +1176,16 @@ tabloyu **canlı** yeniden çizer.
   PDF'teki 4 KPI kartı (`computeHistoryStats`, bkz. §11.2) da bu yüzden
   otomatik olarak filtrelenmiş alt kümeyi yansıtır, ayrı bir değişiklik
   gerekmedi.
+- **Uygulanan filtre dosyanın içinde de görünür** (2026-09-08): `applyHistoryFilter`
+  veriyi süzerken, `buildHistoryFilterSummary()` aynı `historyFilter`'dan
+  okunabilir bir cümle üretir ("Mesafe: 90–100 km · Süre: 150 dk ve üzeri"
+  gibi) ve her iki export çağrısına ikinci parametre olarak geçilir. Excel'de
+  başlık satırından önce tek satırlık bir bilgi satırı, PDF'te alt başlığın
+  hemen altında kırmızı "Filtre:" etiketiyle basılır — filtre yoksa (fonksiyon
+  `null` döner) hiçbir ek satır eklenmez, düzen eskisiyle birebir aynı kalır.
+  Sınırsız uç için "∞" sembolü **kullanılmaz** — PDF'e gömülü Arial alt
+  kümesinde bu glif yok, boş karakter olarak basılıyordu; onun yerine "90 km
+  ve üzeri" / "150 km ve altı" gibi düz metin kullanılır.
 
 ### 11.1 Excel (`toExcel`, `toExcelHistory`)
 
@@ -1202,6 +1212,22 @@ tabloyu **canlı** yeniden çizer.
   zaman tamamen başarısız olmaz.
 - Sefer geçmişi PDF'i ayrıca 4 KPI kartı içerir: bu ay/bu hafta sefer sayısı,
   en çok kullanılan araç, en çok uğranılan lokasyon (`computeHistoryStats`).
+- **Ortak üst bant / alt bilgi (2026-09-08):** `drawPdfHeader()`/`drawPdfFooter()`
+  hem `toPdf` hem `toPdfHistory` tarafından paylaşılır — kırmızı bant
+  (18mm, marka rengi baskın kalır) artık altında ince (1.6mm) bir mercan
+  ayraçla kapanır, sağ üstte "Oluşturulma: GG.AA.YYYY SS:DD" saati basılır.
+  `drawPdfFooter`, `doc.internal.getNumberOfPages()` ile **tüm sayfaları**
+  gezip her birine ince bir ayraç çizgisi + sol altta marka adı + sağ altta
+  "Sayfa X / Y" ekler; autoTable'ın kendiliğinden sayfa eklediği durumlarda
+  (`margin.bottom: 16` ile içerik alt bilgiye çarpmasın diye pay bırakılır)
+  bile her sayfa kapsanır — çağrıldığı yer: tüm içerik/tablo(lar) eklendikten
+  SONRA, `.save()`'den hemen önce, bir kez.
+- **KPI kart hizası (2026-09-08):** Eskiden değerin Y konumu etikettin kaç
+  satıra sardığına bağlıydı (`labelLines.length`), bu yüzden farklı
+  uzunluktaki etiketlere sahip kartlarda değerlerin taban çizgisi kayıyordu.
+  Artık her kartta etiket için **sabit** 2 satırlık yer ayrılıyor
+  (`labelAreaHeight`), değer her zaman aynı Y'de başlıyor — etiket 1 satıra
+  sığsa bile.
 
 ---
 
@@ -1343,8 +1369,10 @@ Buradaki özet, mimari kararların gerekçesi:
 *Bu doküman kod tabanının 2026-09-08 tarihli hali üzerinden elle incelenerek
 hazırlanmış/revize edilmiştir (Express + SQLite backend'e geçiş, TomTom
 proxy'si, `public/` + `docs/` klasör düzeni; ayrıca 2026-09-08: "Trafik
-Gecikmesi" özet kartının kaldırılması ve sürükle-bırak ile durak sırası
-değiştirildiğinde canlı TomTom verisinin de yeniden istenmesi dahil).*
+Gecikmesi" özet kartının kaldırılması, sürükle-bırak ile durak sırası
+değiştirildiğinde canlı TomTom verisinin de yeniden istenmesi ve Excel/PDF
+dışa aktarımlarının görsel olarak güzelleştirilip uygulanan Sefer Geçmişi
+filtresini dosyanın içinde göstermesi dahil).*
 
 **Senkron kalması gerekenler:** §7/§8 algoritma anlatımı ↔ `optimizer.js` /
 `fleet.js`; §5.4 ve §15 senkronizasyon anlatımı ↔ `public/js/data.js` /

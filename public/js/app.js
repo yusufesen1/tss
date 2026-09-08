@@ -2268,6 +2268,28 @@
     });
   }
 
+  // Sefer Geçmişi dışa aktarımlarında (Excel/PDF), o an ekranda uygulanan
+  // filtreyi okunabilir bir cümleye çevirir — hiçbir alan doluysa null döner
+  // (export fonksiyonları bunu "filtre yok" olarak yorumlar, eski davranış
+  // aynen korunur). Hiçbir yerde saklanmaz, sadece export anında üretilir.
+  function buildHistoryFilterSummary() {
+    var f = historyFilter;
+    var parts = [];
+    if (f.fromDate && f.toDate) parts.push(formatDocDate(f.fromDate) + ' – ' + formatDocDate(f.toDate));
+    else if (f.fromDate) parts.push(formatDocDate(f.fromDate) + ' sonrası');
+    else if (f.toDate) parts.push(formatDocDate(f.toDate) + ' öncesi');
+    if (f.vehicle) parts.push('Araç: ' + f.vehicle);
+    // PDF'e gömülü font "∞" glifini içermediğinden (boş/kayıp karakter
+    // olarak basılıyordu), sınırsız uç için sembol yerine düz metin kullanılır.
+    if (f.minDistance !== '' && f.maxDistance !== '') parts.push('Mesafe: ' + f.minDistance + '–' + f.maxDistance + ' km');
+    else if (f.minDistance !== '') parts.push('Mesafe: ' + f.minDistance + ' km ve üzeri');
+    else if (f.maxDistance !== '') parts.push('Mesafe: ' + f.maxDistance + ' km ve altı');
+    if (f.minDuration !== '' && f.maxDuration !== '') parts.push('Süre: ' + f.minDuration + '–' + f.maxDuration + ' dk');
+    else if (f.minDuration !== '') parts.push('Süre: ' + f.minDuration + ' dk ve üzeri');
+    else if (f.maxDuration !== '') parts.push('Süre: ' + f.maxDuration + ' dk ve altı');
+    return parts.length ? parts.join(' · ') : null;
+  }
+
   // "Araç" filtre seçeneklerini TÜM (filtrelenmemiş) geçmişteki plakalardan
   // türetir — aksi halde filtre daraldıkça diğer seçenekler listeden
   // kaybolurdu. Mevcut seçim varsa (liste yeniden kurulurken) korunur.
@@ -2462,10 +2484,11 @@
     // Excel/PDF her zaman o an ekranda görünen (filtre uygulanmışsa
     // filtrelenmiş) listeyi indirir — filtre paneli hiç açılmadıysa
     // historyFilter boş olduğundan applyHistoryFilter tüm geçmişi
-    // değişmeden döndürür.
+    // değişmeden döndürür. buildHistoryFilterSummary() de aynı durumda
+    // null döner, export fonksiyonları filtre satırını hiç basmaz.
     $('btnExportHistoryExcel').addEventListener('click', function () {
       try {
-        Exp.toExcelHistory(applyHistoryFilter(D.getHistory()));
+        Exp.toExcelHistory(applyHistoryFilter(D.getHistory()), buildHistoryFilterSummary());
         toast('Sefer geçmişi Excel olarak indirildi.', 'success');
       } catch (err) {
         toast(err.message, 'error');
@@ -2473,7 +2496,7 @@
     });
     $('btnExportHistoryPdf').addEventListener('click', function () {
       try {
-        Exp.toPdfHistory(applyHistoryFilter(D.getHistory()));
+        Exp.toPdfHistory(applyHistoryFilter(D.getHistory()), buildHistoryFilterSummary());
         toast('Sefer geçmişi PDF olarak indirildi.', 'success');
       } catch (err) {
         toast(err.message, 'error');

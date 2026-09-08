@@ -207,11 +207,16 @@
     XLSX.writeFile(book, 'tss-rota-' + stamp() + '.xlsx');
   }
 
-  /** Excel: sefer geçmişi (onaylanan tüm seferlerin özeti). */
-  function toExcelHistory(history) {
+  /** Excel: sefer geçmişi (onaylanan tüm seferlerin özeti). filterSummary
+   *  verilirse (Sefer Geçmişi'nde bir filtre uygulanmışsa) başlıktan önce
+   *  tek satırlık bir bilgi satırı olarak eklenir — Excel'i tek başına
+   *  görenler de hangi alt kümenin dışa aktarıldığını anlasın diye. */
+  function toExcelHistory(history, filterSummary) {
     if (!global.XLSX) throw new Error('Excel kütüphanesi yüklenemedi.');
 
-    var data = [HISTORY_HEADERS].concat(historyRowsToMatrix(history));
+    var data = (filterSummary ? [['Filtre: ' + filterSummary], []] : [])
+      .concat([HISTORY_HEADERS])
+      .concat(historyRowsToMatrix(history));
     var sheet = XLSX.utils.aoa_to_sheet(data);
 
     sheet['!cols'] = [
@@ -224,8 +229,66 @@
     XLSX.writeFile(book, 'tss-sefer-gecmisi-' + stamp() + '.xlsx');
   }
 
-  /** PDF: sefer geçmişi — 4 KPI kartı + özet tablo. */
-  function toPdfHistory(history) {
+  // --- PDF ortak görsel dil: marka renkleri + üst bant/alt bilgi yardımcıları ---
+  var BRAND_RED = [201, 12, 15];
+  var BRAND_CORAL = [236, 95, 67];
+  var INK = [45, 41, 39];
+  var INK_MUTED = [127, 117, 112];
+  var LINE_NEUTRAL = [225, 217, 211];
+
+  function formatGeneratedAt() {
+    var d = new Date();
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /** Tüm PDF'lerde ortak üst bant: kırmızı zemin + altında ince mercan ayraç
+   *  (marka renk hiyerarşisi: kırmızı baskın, mercan yalnızca ince bir vurgu),
+   *  sol üstte başlık, sağ üstte "oluşturulma" saati. Toplam bant yüksekliği
+   *  (18mm) değişmiyor — alttaki içeriğin Y konumları etkilenmez. */
+  function drawPdfHeader(doc, pageWidth, title, setFont) {
+    var bandHeight = 18, accentHeight = 1.6;
+    doc.setFillColor(BRAND_RED[0], BRAND_RED[1], BRAND_RED[2]);
+    doc.rect(0, 0, pageWidth, bandHeight - accentHeight, 'F');
+    doc.setFillColor(BRAND_CORAL[0], BRAND_CORAL[1], BRAND_CORAL[2]);
+    doc.rect(0, bandHeight - accentHeight, pageWidth, accentHeight, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    setFont('bold');
+    doc.setFontSize(12);
+    doc.text(title, 12, 11.5);
+
+    setFont('normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 220, 214);
+    doc.text('Oluşturulma: ' + formatGeneratedAt(), pageWidth - 12, 11.5, { align: 'right' });
+
+    return bandHeight;
+  }
+
+  /** Her sayfanın altına ince bir ayraç + marka adı (sol) + "Sayfa X / Y"
+   *  (sağ) ekler. autoTable kendi sayfalarını ekledikten SONRA, .save()'den
+   *  hemen önce bir kez çağrılır — geriye dönük tüm sayfaları gezer. */
+  function drawPdfFooter(doc, pageWidth, pageHeight, pdfFont) {
+    var total = doc.internal.getNumberOfPages();
+    for (var i = 1; i <= total; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(LINE_NEUTRAL[0], LINE_NEUTRAL[1], LINE_NEUTRAL[2]);
+      doc.setLineWidth(0.2);
+      doc.line(12, pageHeight - 10, pageWidth - 12, pageHeight - 10);
+
+      if (pdfFont) doc.setFont(pdfFont, 'normal'); else doc.setFont(undefined, 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(INK_MUTED[0], INK_MUTED[1], INK_MUTED[2]);
+      doc.text('Turkish Support Services — Rota Planlama Paneli', 12, pageHeight - 6);
+      doc.text('Sayfa ' + i + ' / ' + total, pageWidth - 12, pageHeight - 6, { align: 'right' });
+    }
+  }
+
+  /** PDF: sefer geçmişi — 4 KPI kartı + özet tablo. filterSummary verilirse
+   *  (Sefer Geçmişi'nde bir filtre uygulanmışsa) alt başlığın hemen altına,
+   *  hangi alt kümenin dışa aktarıldığını gösteren bir satır olarak eklenir. */
+  function toPdfHistory(history, filterSummary) {
     if (!global.jspdf || !global.jspdf.jsPDF) {
       throw new Error('PDF kütüphanesi yüklenemedi.');
     }
@@ -233,21 +296,33 @@
     var jsPDF = global.jspdf.jsPDF;
     var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     var pageWidth = doc.internal.pageSize.getWidth();
+    var pageHeight = doc.internal.pageSize.getHeight();
     var margin = 12;
     var pdfFont = registerPdfFont(doc) ? 'Arial' : undefined;
     function setFont(style) { if (pdfFont) doc.setFont(pdfFont, style); }
 
-    doc.setFillColor(201, 12, 15);
-    doc.rect(0, 0, pageWidth, 18, 'F');
-    doc.setTextColor(255, 255, 255);
-    setFont('bold');
-    doc.setFontSize(12);
-    doc.text('Turkish Support Services — Sefer Geçmişi', margin, 11.5);
+    drawPdfHeader(doc, pageWidth, 'Turkish Support Services — Sefer Geçmişi', setFont);
 
     doc.setTextColor(60, 55, 52);
     setFont('normal');
     doc.setFontSize(9);
     doc.text(history.length + ' onaylanmış sefer', margin, 25);
+
+    // Filtre uygulanmışsa alt başlığın hemen altına tek/çok satırlık bir
+    // özet eklenir; kart bloğu (cardY) bu satırın kapladığı yüksekliğe göre
+    // aşağı kayar — filtre yoksa eski sabit konumla birebir aynı kalır.
+    var cardY = 30;
+    if (filterSummary) {
+      setFont('bold');
+      doc.setTextColor(BRAND_RED[0], BRAND_RED[1], BRAND_RED[2]);
+      doc.setFontSize(8);
+      doc.text('Filtre:', margin, 30.5);
+      setFont('normal');
+      doc.setTextColor(INK_MUTED[0], INK_MUTED[1], INK_MUTED[2]);
+      var filterLines = doc.splitTextToSize(filterSummary, pageWidth - margin * 2 - 14);
+      doc.text(filterLines, margin + 14, 30.5);
+      cardY = 30.5 + filterLines.length * 4.2 + 4;
+    }
 
     // --- 4 KPI kartı ---
     var stats = computeHistoryStats(history);
@@ -260,8 +335,12 @@
 
     var cardGap = 6;
     var cardWidth = (pageWidth - margin * 2 - cardGap * 3) / 4;
-    var cardY = 30;
-    var cardHeight = 22;
+    var cardHeight = 24;
+    // Etiket 1 ya da 2 satıra sarabiliyor (kart genişliğine göre değişir);
+    // değerin Y'si eskiden labelLines.length'e bağlıydı, bu yüzden kartlar
+    // arasında taban çizgisi kayıyordu. Artık etiket için HER kartta sabit
+    // 2 satırlık yer ayrılıyor — değer her zaman aynı Y'de başlıyor.
+    var labelAreaHeight = 2 * 3.2;
 
     cards.forEach(function (c, i) {
       var x = margin + i * (cardWidth + cardGap);
@@ -283,7 +362,7 @@
       doc.setFontSize(10);
       doc.setTextColor(45, 41, 39);
       var valueLines = doc.splitTextToSize(String(c.value), cardWidth - 6);
-      doc.text(valueLines, x + 3, cardY + 6 + labelLines.length * 3.2 + 4);
+      doc.text(valueLines, x + 3, cardY + 6 + labelAreaHeight + 4);
     });
 
     // --- Özet tablo ---
@@ -295,9 +374,10 @@
       head: [HISTORY_HEADERS],
       body: historyRowsToMatrix(history),
       startY: cardY + cardHeight + 10,
-      margin: { left: margin, right: margin },
+      margin: { left: margin, right: margin, bottom: 16 },
       styles: bodyStyles,
       headStyles: headStyles,
+      alternateRowStyles: { fillColor: [250, 249, 247] },
       columnStyles: {
         3: { halign: 'center' },
         4: { halign: 'right' },
@@ -305,6 +385,8 @@
         6: { halign: 'right' }
       }
     });
+
+    drawPdfFooter(doc, pageWidth, pageHeight, pdfFont);
 
     doc.save('tss-sefer-gecmisi-' + stamp() + '.pdf');
   }
@@ -331,13 +413,7 @@
     var vehicleList = plan.groups.map(function (g) { return g.vehicle.plate; }).join(', ');
     var firstDeparture = plan.groups.length ? plan.groups[0].meta.departure : '';
 
-    // Başlık bandı
-    doc.setFillColor(201, 12, 15);
-    doc.rect(0, 0, pageWidth, 18, 'F');
-    doc.setTextColor(255, 255, 255);
-    setFont('bold');
-    doc.setFontSize(12);
-    doc.text('Turkish Support Services — Rota Planı', margin, 11.5);
+    drawPdfHeader(doc, pageWidth, 'Turkish Support Services — Rota Planı', setFont);
 
     doc.setTextColor(60, 55, 52);
     setFont('normal');
@@ -436,7 +512,7 @@
             head: [HEADERS],
             body: rowsToMatrix(group.tableRows),
             startY: y + 8,
-            margin: { left: margin, right: margin },
+            margin: { left: margin, right: margin, bottom: 16 },
             styles: bodyStyles,
             headStyles: headStyles,
             alternateRowStyles: { fillColor: [250, 249, 247] },
@@ -458,6 +534,8 @@
 
           y = doc.lastAutoTable.finalY + 10;
         });
+
+        drawPdfFooter(doc, pageWidth, pageHeight, pdfFont);
 
         doc.save('tss-rota-' + stamp() + '.pdf');
       });
