@@ -1093,19 +1093,8 @@
     return Math.max(0, result.totalSeconds - serviceTotal);
   }
 
-  // Canlı trafik verisi alınmış bir grupta, TomTom'un bildirdiği gecikmelerin
-  // toplamı. group.liveLegs yoksa (OSRM tahminine düşülmüşse) null döner —
-  // "0 dk gecikme" ile "bilinmiyor" karışmasın diye.
-  function liveTrafficDelay(group) {
-    if (!group.liveLegs) return null;
-    var total = 0;
-    group.liveLegs.forEach(function (leg) { total += leg.trafficDelaySeconds || 0; });
-    return total;
-  }
-
   function buildGroupMeta(group) {
     var fc = fuelCostForGroup(group);
-    var delaySec = liveTrafficDelay(group);
     return {
       distance: km(group.result.distance) + ' km',
       duration: durationLabel(group.result.totalSeconds),
@@ -1114,11 +1103,7 @@
       departure: el.inpDeparture.value,
       fuelCost: formatFuelCost(fc),
       fuelCostDetail: formatFuelCostDetail(fc),
-      fuelCostValue: fc.value,
-      trafficDelay: delaySec === null ? null : durationLabel(delaySec),
-      trafficDelayDetail: delaySec === null
-        ? null
-        : 'TomTom canlı trafik verisine göre, bu rotanın boş yola kıyasla kaybettiği süre.'
+      fuelCostValue: fc.value
     };
   }
 
@@ -1333,25 +1318,44 @@
   // değiştiği için OSRM'den güzergah çizgisi tekrar alınır.
   function replayGroupAndRefreshGeometry(plan, group) {
     group.result = replayGroupResult(plan, group);
-    group.tableRows = buildTableRows(group.result);
-    group.meta = buildGroupMeta(group);
 
     setLoading(true, 'Güzergah çiziliyor…');
-    fetchGroupGeometry(plan, group).then(function () {
-      D.state.plan = plan;
-      drawPlan(plan);
-      renderPlanGroups(plan);
-      checkWeather(plan);
-      // Sıra değiştiği için güzergah da değişti — önbellekteki trafik olayı
-      // listesi (varsa) artık o güzergaha ait değil. Plan nesnesi AYNI kaldığı
-      // için ensureApproveTrafficIncidents kendiliğinden fark edemez; burada
-      // elle geçersiz kılınıyor. Yeniden sorgu Rotayı Onayla açılırken atılır.
-      lastTrafficIncidents = null;
-      lastTrafficIncidentsPlan = null;
-      renderStops();
-      updateCapacity();
-      setLoading(false);
-    });
+    fetchGroupGeometry(plan, group)
+      .then(function () {
+        // planRoute() ile TUTARLI davranış: TomTom anahtarı varsa canlı
+        // trafik HER İKİ optimizasyon modunda uygulanır (bkz. planRoute'taki
+        // aynı yorum). reorderGroupRows sıra değiştiğinde önceki bacakları
+        // (group.liveLegs) zaten geçersiz kılmıştı — burada YENİ sıraya göre
+        // baştan isteniyor. Aksi halde sürükle-bıraktan sonra sessizce
+        // OSRM'in sabit trafik çarpanlı tahminine düşülüp rakamlar aniden
+        // değişiyor, kullanıcıya "sistem bozuldu" gibi görünüyordu.
+        if (!D.hasTomTomKey()) return true;
+        return refineGroupWithLiveTraffic(plan, group);
+      })
+      .then(function (ok) {
+        if (ok === false) {
+          toast('TomTom canlı trafik verisine ulaşılamadı (kota/bağlantı) — OSRM tahminiyle devam edildi.', 'error');
+        }
+        // tableRows/meta, group.result NE OLURSA OLSUN (TomTom'lu ya da
+        // OSRM'li) en güncel haliyle burada, TomTom denemesinden SONRA
+        // inşa ediliyor — aksi halde refineGroupWithLiveTraffic'in
+        // group.result'ı üzerine yazdığı yeni sonuç tabloya hiç yansımazdı.
+        group.tableRows = buildTableRows(group.result);
+        group.meta = buildGroupMeta(group);
+        D.state.plan = plan;
+        drawPlan(plan);
+        renderPlanGroups(plan);
+        checkWeather(plan);
+        // Sıra değiştiği için güzergah da değişti — önbellekteki trafik olayı
+        // listesi (varsa) artık o güzergaha ait değil. Plan nesnesi AYNI kaldığı
+        // için ensureApproveTrafficIncidents kendiliğinden fark edemez; burada
+        // elle geçersiz kılınıyor. Yeniden sorgu Rotayı Onayla açılırken atılır.
+        lastTrafficIncidents = null;
+        lastTrafficIncidentsPlan = null;
+        renderStops();
+        updateCapacity();
+        setLoading(false);
+      });
   }
 
   function buildTableRows(result) {
@@ -1485,12 +1489,6 @@
     summary.appendChild(buildSummaryCard('Toplam Süre', group.meta.duration, 'duration'));
     summary.appendChild(buildSummaryCard('Yol Süresi', group.meta.driveDuration, 'road'));
     summary.appendChild(buildSummaryCard('Bitiş Saati', group.meta.finish, 'flag'));
-    // Yalnızca canlı veri geldiyse gösterilir — OSRM tahminine düşüldüyse
-    // ortada ölçülmüş bir gecikme yok, boş kart göstermek yanıltıcı olurdu.
-    if (group.meta.trafficDelay) {
-      summary.appendChild(buildSummaryCard('Trafik Gecikmesi', group.meta.trafficDelay,
-        'duration', group.meta.trafficDelayDetail));
-    }
     summary.appendChild(buildSummaryCard('Yakıt Maliyeti', group.meta.fuelCost, 'fuel', group.meta.fuelCostDetail));
     wrap.appendChild(summary);
 
@@ -1674,9 +1672,10 @@
     order.splice(toPos, 0, moved);
     group.order = order;
     // Sıra değiştiği için önceki TomTom bacakları artık yanlış durak
-    // çiftlerine karşılık geliyor — geçersiz kılıp OSRM'in yeniden
-    // hesapladığı statik tahminlere düşüyoruz (canlı trafik burada zaten
-    // otomatik olarak yeniden istenmiyor, bkz. refineGroupWithLiveTraffic).
+    // çiftlerine karşılık geliyor — geçersiz kılıyoruz. replayGroupAndRefreshGeometry
+    // bir TomTom key varsa refineGroupWithLiveTraffic'i tekrar çağırıp yeni
+    // sıraya göre canlı veriyi yeniden ister; yoksa/başarısız olursa OSRM'in
+    // yeniden hesapladığı statik tahmine düşülür.
     group.liveLegs = null;
     group.edited = true;
     replayGroupAndRefreshGeometry(plan, group);

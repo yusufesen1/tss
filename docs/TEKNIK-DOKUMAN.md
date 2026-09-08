@@ -395,7 +395,7 @@ Başarılı → kuyruktan sil        Başarısız → kuyrukta kalır, tekrar de
       minimize eder).
    3. Her grup için `Osrm.route(...)` — haritada çizilecek gerçek güzergah
       geometrisi (GeoJSON) ayrı ayrı alınır.
-   4. **Sadece "En Az Süre" seçiliyse ve bir TomTom API key kayıtlıysa**:
+   4. **Bir TomTom API key kayıtlıysa** (mesafe ya da süre modu fark etmez):
       `refineGroupWithLiveTraffic(...)` her grubun zaten belirlenmiş durak
       sırasındaki ardışık bacaklar için TomTom'dan canlı trafikli süre/mesafe
       ister ve sonucu `Fleet.replayGroupWithLiveLegs(...)` ile plana işler
@@ -404,11 +404,20 @@ Başarılı → kuyruktan sil        Başarısız → kuyrukta kalır, tekrar de
       olursa sessizce OSRM tahminiyle devam edilir.
    5. `finalizePlan()` — tabloyu, haritayı, hava durumu uyarılarını, filo
       uyarı bandını render eder.
-4. **Elle düzenleme** (onaydan önce, hepsi mevcut sırayı bozmadan
-   `TSSFleet.replayGroup()` ile zaman çizelgesini yeniden hesaplar):
+4. **Elle düzenleme** (onaydan önce, hepsi mevcut sırayı bozmadan zaman
+   çizelgesini yeniden hesaplar):
+   - Palet miktarı / durak süresi satırdan elle değiştirme, bir gruba
+     atanan aracı üstteki seçimden değiştirme (`swapGroupVehicle`) — sıra
+     değişmediği için önbellekteki TomTom bacakları (`group.liveLegs`)
+     geçerliliğini korur, `TSSFleet.replayGroup()` ile hızlıca yeniden
+     oynatılır (§8.5).
    - Durak sırasını sürükle-bırak (`attachRowDragHandlers` → `reorderGroupRows`)
-   - Palet miktarı / durak süresi satırdan elle değiştirme
-   - Bir gruba atanan aracı üstteki seçimden değiştirme (`swapGroupVehicle`)
+     — sıra değiştiği için önceki bacaklar artık geçersiz, `group.liveLegs`
+     sıfırlanır ve `replayGroupAndRefreshGeometry(...)` hem OSRM
+     geometrisini hem (bir TomTom key varsa) canlı trafik verisini —
+     `refineGroupWithLiveTraffic(...)` üzerinden — **yeni sıraya göre**
+     yeniden ister; bu adım ilk planlamadaki 4. maddeyle aynı mantığı
+     izler (§10.3).
 5. **Onaylama**: "Rotayı Onayla" tıklanınca — bu, TomTom'a olay sorgusunun
    atıldığı **tek** an (bkz. §10.3, `ensureApproveTrafficIncidents`) —
    buton filo genelinde **tahmini toplam yakıt maliyetini** gösterir
@@ -965,10 +974,15 @@ sabit çarpan yedeğiyle çalışır (§7.2).
 `sectionType=traffic` parametresi sayesinde rota **üzerindeki** tıkanık
 bölümler de aynı yanıtta gelir (`jams`): kategori (JAM / ROAD_WORK /
 ROAD_CLOSURE), gecikme saniyesi, etkin hız ve rota geometrisindeki nokta
-aralığı. Ayrı bir istek ya da coğrafi filtreleme gerekmez. Araç kartındaki
-**"Trafik Gecikmesi"** özeti bu veriden üretilir ve yalnızca canlı veri
-geldiyse gösterilir — OSRM tahminine düşülmüşse ölçülmüş bir gecikme
-olmadığından kart hiç çizilmez.
+aralığı. Ayrı bir istek ya da coğrafi filtreleme gerekmez.
+
+> **2026-09-08 revizyonu:** Araç özet kartlarında ayrı bir "Trafik Gecikmesi"
+> kartı **kaldırıldı** — canlı veri geldiğinde zaten "Toplam Süre" doğrudan
+> gerçek trafikten hesaplandığından, ayrı bir gecikme rakamı tekrarcı/
+> kafa karıştırıcıydı. `jams`/`trafficDelaySeconds` verisi hâlâ isteniyor ve
+> `fleet.js`'te satır başına saklanıyor (`row.trafficDelaySec`) — ileride
+> ayrıntılı bir görünüm gerekirse hazır duruyor, ama şu an hiçbir arayüz
+> öğesi onu okumuyor.
 
 #### 10.3.1 Rota üzerindeki olaylar (kaza / kapalı yol / çalışma)
 
@@ -1326,9 +1340,11 @@ Buradaki özet, mimari kararların gerekçesi:
 
 ---
 
-*Bu doküman kod tabanının 2026-09-07 tarihli hali üzerinden elle incelenerek
+*Bu doküman kod tabanının 2026-09-08 tarihli hali üzerinden elle incelenerek
 hazırlanmış/revize edilmiştir (Express + SQLite backend'e geçiş, TomTom
-proxy'si, `public/` + `docs/` klasör düzeni dahil).*
+proxy'si, `public/` + `docs/` klasör düzeni; ayrıca 2026-09-08: "Trafik
+Gecikmesi" özet kartının kaldırılması ve sürükle-bırak ile durak sırası
+değiştirildiğinde canlı TomTom verisinin de yeniden istenmesi dahil).*
 
 **Senkron kalması gerekenler:** §7/§8 algoritma anlatımı ↔ `optimizer.js` /
 `fleet.js`; §5.4 ve §15 senkronizasyon anlatımı ↔ `public/js/data.js` /
