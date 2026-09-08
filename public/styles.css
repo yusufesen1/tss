@@ -353,9 +353,6 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
    dönen ince bir vurgu — kapatma/iptal eylemleri için primary kırmızı
    ayrılmıyor (bkz. tasarım sistemi: kırmızı yalnızca onay/kaydet eylemlerinde). */
 .btn-neutral[data-close-modal]:hover{ border-color: var(--brand-red); color: var(--brand-red); filter: none; }
-/* Excel butonları: Kapat butonuyla aynı desen — normalde düz nötr,
-   üstüne gelince çerçeve/metin forest yeşiline döner. */
-.btn-excel:not(:disabled):hover{ border-color: var(--brand-forest); color: var(--brand-forest); filter: none; }
 /* Karşılaştır: diğer export-actions butonlarından (Google Maps/Excel/PDF)
    farklı bir eylem türü — aktif planı hiç değiştirmiyor, sadece bilgi
    veriyor. Kırmızı çerçeve/metinle sürekli ayırt edilir (sadece hover değil). */
