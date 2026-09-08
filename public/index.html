@@ -153,9 +153,9 @@
       <strong class="weather-warnings-title">Hava Durumu Uyarısı</strong>
     </div>
 
-    <div class="traffic-warnings" id="trafficWarnings" hidden>
-      <strong class="traffic-warnings-title">Rota Üzerinde Trafik Olayı</strong>
-    </div>
+    <!-- Rota üzerindeki trafik olayları burada değil, yalnızca Rotayı Onayla
+         modalında gösterilir (bkz. #approveTrafficCol) — her plan
+         düzenlemesinde otomatik sorgulanmasın diye. -->
 
     <div class="fleet-warning" id="fleetWarning" hidden></div>
 
@@ -492,8 +492,10 @@
         <!-- Rota üzerinde olay yoksa bu sütun tamamen gizlenir, not sütunu
              tam genişlik kaplar (bkz. styles.css: #approveTrafficCol[hidden] + …) -->
         <div class="approve-col-traffic" id="approveTrafficCol" hidden>
-          <div class="traffic-warnings" id="approveTrafficWarnings">
+          <div class="traffic-warnings">
             <strong class="traffic-warnings-title">Rota Üzerinde Trafik Olayı</strong>
+            <div class="traffic-warnings-grid" id="approveTrafficGrid"></div>
+            <p class="traffic-warnings-note" id="approveTrafficNote"></p>
           </div>
         </div>
         <div class="approve-col-note">

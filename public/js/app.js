@@ -24,11 +24,11 @@
   // OSRM isteği atmadan) hesaplayabilsin diye. planRoute() başarıyla matrix
   // aldığında set edilir, clearPlan()'da temizlenir.
   var lastPlanningContext = null;
-  // checkTrafficIncidents()'ın en son çektiği liste — Rotayı Onayla modalı
-  // açılırken yeniden sorgu atmadan aynı sonucu gösterebilsin diye (bkz.
-  // renderTrafficIncidents / renderApproveTrafficIncidents). null = henüz
-  // hiç sorgulanmadı; { list: [], ... } = sorgulandı, olay yok.
+  // Yalnızca Rotayı Onayla tıklanınca sorgulanır (bkz. ensureApproveTrafficIncidents)
+  // — plan her düzenlendiğinde otomatik çekilmez, TomTom kotasını boşa
+  // harcamamak için. null = henüz sorgulanmadı; { list: [], ... } = sorgulandı, olay yok.
   var lastTrafficIncidents = null;
+  var lastTrafficIncidentsPlan = null;   // yukarıdakinin hangi plan için sorgulandığı (önbellek anahtarı)
   // js/fuelprice.js'ten (varsa) çekilen ulusal ortalama TL/L fiyatı — sadece
   // bu oturumda, bellekte tutulur (kalıcı değil). Kullanıcının Trafik
   // Ayarları > Yakıt bölümünden ELLE girdiği fiyat (D.getFuelPriceSettings())
@@ -1133,7 +1133,6 @@
     drawPlan(plan);
     renderPlanGroups(plan);
     checkWeather(plan);
-    checkTrafficIncidents(plan);
     renderFleetWarning(plan);
   }
 
@@ -1186,31 +1185,14 @@
 
   /* ---------- Rota üzerindeki trafik olayları ----------
      Hava durumu uyarılarıyla aynı felsefe: rotayı ASLA değiştirmez, yalnızca
-     sürücünün bilmesi gerekeni üste yazar. Sorgu ve eleme sunucuda yapılır
-     (bkz. server/tomtom.js) — kutudan dönen yüzlerce olay tarayıcıya inmez. */
-  function checkTrafficIncidents(plan) {
-    var box = $('trafficWarnings');
-    box.hidden = true;
-    // Yeni plan için sorgu henüz sonuçlanmadı — bu arada onay modalı açılırsa
-    // önceki (artık geçersiz olabilecek) plana ait liste gösterilmesin.
-    lastTrafficIncidents = null;
-    if (!TomTom || !TomTom.incidentsOnRoute || !D.hasTomTomKey()) return;
+     sürücünün bilmesi gerekeni gösterir. Sorgu ve eleme sunucuda yapılır
+     (bkz. server/tomtom.js) — kutudan dönen yüzlerce olay tarayıcıya inmez.
 
-    // Tüm grupların çizilmiş güzergahını tek bir çizgide birleştir
-    var route = [];
-    plan.groups.forEach(function (group) {
-      if (group.geometry && group.geometry.length) route = route.concat(group.geometry);
-    });
-    if (route.length < 2) return;
-
-    TomTom.incidentsOnRoute(route).then(function (result) {
-      if (D.state.plan !== plan) return;   // bu arada yeni bir plan yapılmış olabilir
-      renderTrafficIncidents(result);
-    })['catch'](function (err) {
-      // Best-effort: olay sorgusu başarısız olsa da plan kullanılabilir kalır
-      console.warn('[TSS] Trafik olayları alınamadı:', err.message || err);
-    });
-  }
+     Yalnızca Rotayı Onayla modalında gösterilir — plan her planlandığında/
+     düzenlendiğinde otomatik çekilmez, yalnızca kullanıcı fiilen onaylamaya
+     giderken (bkz. btnApproveRoute), TomTom'un ücretli/kotalı olması
+     nedeniyle bilinçli bir maliyet kısıtlaması (aynı gerekçe §10.3'teki
+     "n istek, n² değil" kuralıyla). */
 
   function incidentLabel(inc) {
     var where = [inc.from, inc.to].filter(Boolean).join(' → ');
@@ -1219,81 +1201,78 @@
     return where || inc.description || 'Konum belirtilmemiş';
   }
 
-  // Tek bir olay satırı — üst banttaki özet ve Rotayı Onayla modalındaki
-  // tam liste AYNI DOM yapısını kullanır (bkz. renderTrafficIncidents /
-  // renderApproveTrafficIncidents), tutarsız görünüm olmasın diye.
-  function buildIncidentRow(inc) {
-    var row = document.createElement('p');
-    row.className = 'traffic-warning-item';
+  // Kompakt tek satırlık "chip" — bir ızgarada yan yana dizilip kaydırma
+  // gerektirmeden sığsın diye uzun etiketler tek satıra kesiliyor (...);
+  // tam metin fare ile üzerine gelince title tooltip'inde okunabilir.
+  function buildIncidentChip(inc) {
+    var chip = document.createElement('div');
+    chip.className = 'traffic-warning-item';
+    chip.title = inc.category + ' — ' + incidentLabel(inc);
 
     var kind = document.createElement('span');
     kind.className = 'tw-kind';
     kind.textContent = inc.category;
-    row.appendChild(kind);
+    chip.appendChild(kind);
 
     var where = document.createElement('span');
+    where.className = 'tw-where';
     where.textContent = incidentLabel(inc);
-    row.appendChild(where);
+    chip.appendChild(where);
 
     if (inc.delaySeconds > 0) {
       var delay = document.createElement('span');
       delay.className = 'tw-delay';
       delay.textContent = '+' + durationLabel(inc.delaySeconds);
-      row.appendChild(delay);
+      chip.appendChild(delay);
     }
-    return row;
+    return chip;
   }
 
-  function renderTrafficIncidents(result) {
-    // Onay modalı açıldığında yeniden sorgu atmadan aynı listeyi göstermek
-    // için saklanıyor (bkz. renderApproveTrafficIncidents). Olay yoksa da
-    // boş dizi olarak saklanır — "henüz hiç sorgulanmadı" (null) ile
-    // "sorguladık, olay yok" ([]) durumları ayrı tutuluyor.
-    lastTrafficIncidents = { list: (result && result.incidents) || [], thresholdMeters: result && result.thresholdMeters };
+  // Rotayı Onayla'ya basılınca çağrılır. Aynı plan (aynı nesne referansı)
+  // için tekrar açılırsa (kullanıcı modalı kapatıp yeniden açtıysa)
+  // önbellekteki sonuç kullanılır, ağa tekrar gidilmez. Güzergah değişince
+  // (sürükle-bırak, bkz. replayGroupAndRefreshGeometry) önbellek elle
+  // geçersiz kılınıyor, plan nesnesinin kendisi değişmediği için.
+  function ensureApproveTrafficIncidents(plan) {
+    if (lastTrafficIncidentsPlan === plan) return Promise.resolve();
 
-    var box = $('trafficWarnings');
-    box.querySelectorAll('.traffic-warning-item, .traffic-warnings-note')
-      .forEach(function (node) { node.remove(); });
+    lastTrafficIncidents = null;
+    lastTrafficIncidentsPlan = plan;
+    if (!TomTom || !TomTom.incidentsOnRoute || !D.hasTomTomKey()) return Promise.resolve();
 
-    var list = lastTrafficIncidents.list;
-    if (!list.length) { box.hidden = true; return; }
+    // Tüm grupların çizilmiş güzergahını tek bir çizgide birleştir
+    var route = [];
+    plan.groups.forEach(function (group) {
+      if (group.geometry && group.geometry.length) route = route.concat(group.geometry);
+    });
+    if (route.length < 2) return Promise.resolve();
 
-    // Uzun listeyi bandı şişirmeden göstermek için ilk 6 olay — tamamı
-    // Rotayı Onayla modalında görülebilir (bkz. renderApproveTrafficIncidents).
-    list.slice(0, 6).forEach(function (inc) { box.appendChild(buildIncidentRow(inc)); });
-
-    var note = document.createElement('p');
-    note.className = 'traffic-warnings-note';
-    var extra = list.length > 6 ? ' (' + (list.length - 6) + ' olay daha)' : '';
-    // Karşı şerit uyarısı bilinçli: uzaklık filtresi bölünmüş yolda gidiş ve
-    // dönüşü ayıramaz, bkz. server/tomtom.js başındaki not.
-    note.textContent = 'Rota çizgisine ' + result.thresholdMeters + ' m yakınlıktaki olaylar' +
-      extra + '. Karşı şeritteki olaylar da listeye girebilir — yönü kontrol edin.';
-    box.appendChild(note);
-
-    box.hidden = false;
+    setLoading(true, 'Rota üzerindeki trafik olayları kontrol ediliyor (TomTom)…');
+    return TomTom.incidentsOnRoute(route).then(function (result) {
+      setLoading(false);
+      if (lastTrafficIncidentsPlan !== plan) return;   // bu arada plan değişmiş olabilir
+      lastTrafficIncidents = { list: (result && result.incidents) || [], thresholdMeters: result && result.thresholdMeters };
+    })['catch'](function (err) {
+      setLoading(false);
+      // Best-effort: olay sorgusu başarısız olsa da onaylama akışı bloklanmaz
+      console.warn('[TSS] Trafik olayları alınamadı:', err.message || err);
+    });
   }
 
-  // Rotayı Onayla modalı açılırken çağrılır: renderTrafficIncidents'ın
-  // zaten çektiği listeyi (yeniden sorgu atmadan) tam olarak gösterir —
-  // üst banttaki 6'lık kısıtlama burada yok, kullanıcı onaylamadan önce
-  // tüm olayları görebilsin diye.
+  // ensureApproveTrafficIncidents() çözüldükten sonra çağrılır, önbelleği
+  // #approveTrafficGrid'e basar. Olay yoksa sütun tamamen gizlenir — not
+  // kutusu tam genişliğe yayılır (bkz. styles.css).
   function renderApproveTrafficIncidents() {
     var col = $('approveTrafficCol');
-    var box = $('approveTrafficWarnings');
-    box.querySelectorAll('.traffic-warning-item, .traffic-warnings-note')
-      .forEach(function (node) { node.remove(); });
+    var grid = $('approveTrafficGrid');
+    grid.innerHTML = '';
 
     var list = lastTrafficIncidents ? lastTrafficIncidents.list : [];
     if (!list.length) { col.hidden = true; return; }
 
-    list.forEach(function (inc) { box.appendChild(buildIncidentRow(inc)); });
-
-    var note = document.createElement('p');
-    note.className = 'traffic-warnings-note';
-    note.textContent = 'Rota çizgisine ' + lastTrafficIncidents.thresholdMeters +
+    list.forEach(function (inc) { grid.appendChild(buildIncidentChip(inc)); });
+    $('approveTrafficNote').textContent = 'Rota çizgisine ' + lastTrafficIncidents.thresholdMeters +
       ' m yakınlıktaki olaylar. Karşı şeritteki olaylar da listeye girebilir — yönü kontrol edin.';
-    box.appendChild(note);
 
     col.hidden = false;
   }
@@ -1363,8 +1342,12 @@
       drawPlan(plan);
       renderPlanGroups(plan);
       checkWeather(plan);
-      // Sıra değiştiği için güzergah da değişti — olay listesi tazelenmeli.
-      checkTrafficIncidents(plan);
+      // Sıra değiştiği için güzergah da değişti — önbellekteki trafik olayı
+      // listesi (varsa) artık o güzergaha ait değil. Plan nesnesi AYNI kaldığı
+      // için ensureApproveTrafficIncidents kendiliğinden fark edemez; burada
+      // elle geçersiz kılınıyor. Yeniden sorgu Rotayı Onayla açılırken atılır.
+      lastTrafficIncidents = null;
+      lastTrafficIncidentsPlan = null;
       renderStops();
       updateCapacity();
       setLoading(false);
@@ -1744,12 +1727,12 @@
     D.state.plan = null;
     lastPlanningContext = null;
     lastTrafficIncidents = null;
+    lastTrafficIncidentsPlan = null;
     renderStops();
     updateCapacity();
     el.planGroups.innerHTML = '';
     el.tableEmpty.hidden = false;
     $('weatherWarnings').hidden = true;
-    $('trafficWarnings').hidden = true;
     el.fleetWarning.hidden = true;
     el.btnApproveRoute.disabled = true;
     el.btnCompare.disabled = true;
@@ -2670,10 +2653,16 @@
 
     el.btnApproveRoute.addEventListener('click', function () {
       if (!D.state.plan) return;
-      $('inpApproveNote').value = D.state.plan.note || '';
-      renderApproveFuelSummary(D.state.plan);
-      renderApproveTrafficIncidents();
-      openModal('modalApprove');
+      var plan = D.state.plan;
+      $('inpApproveNote').value = plan.note || '';
+      renderApproveFuelSummary(plan);
+      // Trafik olayları yalnızca burada, fiilen onaya giderken sorgulanır —
+      // önbellekte varsa (bkz. ensureApproveTrafficIncidents) anında açılır.
+      ensureApproveTrafficIncidents(plan).then(function () {
+        if (D.state.plan !== plan) return;   // bekleme sırasında plan değişmiş olabilir
+        renderApproveTrafficIncidents();
+        openModal('modalApprove');
+      });
     });
 
     $('btnConfirmApprove').addEventListener('click', function () {

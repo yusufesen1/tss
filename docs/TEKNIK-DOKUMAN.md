@@ -409,12 +409,13 @@ Başarılı → kuyruktan sil        Başarısız → kuyrukta kalır, tekrar de
    - Durak sırasını sürükle-bırak (`attachRowDragHandlers` → `reorderGroupRows`)
    - Palet miktarı / durak süresi satırdan elle değiştirme
    - Bir gruba atanan aracı üstteki seçimden değiştirme (`swapGroupVehicle`)
-5. **Onaylama**: "Rotayı Onayla" butonu, notu yazmadan önce filo genelinde
-   **tahmini toplam yakıt maliyetini** gösterir (`renderApproveFuelSummary`,
-   bkz. §10.4). Rotada TomTom kaynaklı trafik olayı varsa modal iki sütuna
-   bölünür: solda rotadaki **tüm** olaylar (üst banttaki 6'lık kısıtlama
-   olmadan, `renderApproveTrafficIncidents`, bkz. §10.3), sağda not kutusu
-   — kullanıcı onaylamadan önce ikisini de görsün diye. Ardından not eklenip
+5. **Onaylama**: "Rotayı Onayla" tıklanınca — bu, TomTom'a olay sorgusunun
+   atıldığı **tek** an (bkz. §10.3, `ensureApproveTrafficIncidents`) —
+   buton filo genelinde **tahmini toplam yakıt maliyetini** gösterir
+   (`renderApproveFuelSummary`, bkz. §10.4). Rotada olay bulunursa modal iki
+   sütuna bölünür: solda rotadaki **tüm** olaylar kompakt bir ızgarada
+   (`renderApproveTrafficIncidents`), sağda not kutusu — kullanıcı
+   onaylamadan önce ikisini de görsün diye. Ardından not eklenip
    (köprü/tonaj kısıtı gibi OSRM'in bilmediği ama sürücünün görmesi gereken
    uyarılar için) `TSSData.approveTrip(plan)`
    çağrılır → sefer geçmişine (yakıt maliyeti anlık görüntüsüyle birlikte)
@@ -998,17 +999,34 @@ uzak olan olaylar segment döngüsüne hiç girmez (ucuz ön eleme).
 > denge: uyarı sürücüyü bilgilendirmek için, rotayı otomatik değiştirmek için
 > değil — yanlış pozitif, kaçırılan kazadan ucuzdur.
 
-Sonuçlar gecikmeye göre sıralanır. Üstteki bantta (`renderTrafficIncidents`,
-`public/js/app.js`) yalnızca ilk 6 tanesi gösterilir, bandın altındaki not
-kalan olay sayısını ve eşiği bildirir. Sonuç bir kere `lastTrafficIncidents`
-modül değişkeninde saklanır; **Rotayı Onayla modalı** açılırken bu liste
-yeniden sorgu atmadan **tamamıyla** (6'lık kısıtlama olmadan) sol sütunda
-gösterilir (`renderApproveTrafficIncidents`), sağ sütunda onay notu —
-kullanıcı onaylamadan önce rotadaki tüm olayları görebilsin diye. İkisi de
-aynı satır yapısını (`buildIncidentRow`) kullanır. Hava durumu uyarılarıyla
-aynı felsefe: **rotayı asla değiştirmez**, yalnızca bilgilendirir; sorgu
-başarısız olursa sessizce atlanır, olay yoksa onay modalında bu sütun hiç
-görünmez (not tam genişlik kaplar).
+**Ne zaman sorgulanır — yalnızca "Rotayı Onayla" tıklanınca:** plan her
+planlandığında/düzenlendiğinde otomatik çekilmez; TomTom'un ücretli/kotalı
+olması nedeniyle bilinçli bir maliyet kısıtlaması (§10.3'ün başındaki "n
+istek, n² değil" kuralıyla aynı gerekçe). `btnApproveRoute` tıklanınca
+`ensureApproveTrafficIncidents(plan)` çağrılır: aynı `plan` nesnesi için
+daha önce sorgulanmışsa (`lastTrafficIncidentsPlan` önbellek anahtarı)
+ağa tekrar gidilmez, modal anında açılır; değilse `setLoading()` ile
+("Rota üzerindeki trafik olayları kontrol ediliyor…") istek atılır. Sürükle-
+bırak ile sıra değiştirip güzergah yenilendiğinde (`replayGroupAndRefreshGeometry`)
+`plan` nesnesinin referansı AYNI kaldığından önbellek otomatik geçersiz
+olmaz — bu yüzden orada `lastTrafficIncidents`/`lastTrafficIncidentsPlan`
+elle sıfırlanır, bir sonraki onay denemesinde yeniden sorgulanır.
+
+Sonuç `lastTrafficIncidents` modül değişkeninde saklanıp `renderApproveTrafficIncidents()`
+ile **Rotayı Onayla modalının** sol sütununda gösterilir — **tamamı**,
+kısıtlama olmadan (bkz. §6). Satırlar `buildIncidentChip` ile tek satıra
+sığan kompakt "chip"ler olarak sığdıkça yan yana dizilen bir ızgarada
+(`.traffic-warnings-grid`) render edilir; uzun etiketler tek satıra kesilir,
+tam metin `title` tooltip'inde görünür. Amaç: 15-20 olay bile modalın
+kendisini kaydırmaya zorlamadan tek bir kartta görülebilsin. Hava durumu
+uyarılarıyla aynı felsefe: **rotayı asla değiştirmez**, yalnızca
+bilgilendirir; sorgu başarısız olursa sessizce atlanır, olay yoksa modalda
+bu sütun hiç görünmez (not sütunu tam genişlik kaplar, bkz. §6).
+
+> **Not (2026-09-08 revizyonu):** bu olaylar önceden Rota Tablosu panelinde
+> ayrı bir bant (`#trafficWarnings`) olarak da gösteriliyordu; kullanıcı
+> isteğiyle kaldırıldı — artık yalnızca onay anında, onay modalında
+> görülüyor.
 
 **Neden n istek, n² değil:** Sıralama kararının kendisi hâlâ OSRM'in
 ücretsiz/sınırsız `matrix()`'inden çıkıyor (tüm nokta çiftleri). TomTom'a
