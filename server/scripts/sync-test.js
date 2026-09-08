@@ -25,6 +25,9 @@ var path = require('path');
 var TMP_DB = path.join(os.tmpdir(), 'tss-synctest-' + Date.now() + '.db');
 process.env.TSS_DB_PATH = TMP_DB;
 process.env.APP_TOKEN = '';          // bu test erişim kontrolünü ayrıca test etmiyor
+// bkz. smoke-test.js'teki aynı satır: gerçek server/.env'deki bir TomTom
+// anahtarının require('../index') ile (dotenv) sızmasını önlüyor.
+process.env.TOMTOM_API_KEY = '';
 
 var app = require('../index');
 var store = require('../store');

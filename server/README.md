@@ -75,12 +75,11 @@ olarak kalır.
 `.env` içindeki `TOMTOM_API_KEY` doldurulursa canlı trafik anahtarı
 **tarayıcıya hiç inmez**: panel isteği `/api/tomtom/route-leg` ucuna yapar,
 TomTom'a asıl çağrıyı sunucu gönderir. `/api/bootstrap` yanıtı bu modda
-anahtarı içermez, yalnızca `tomtomKeySource: "server"` bilgisini taşır ve
-Trafik Ayarları'ndaki alan "sunucuda tanımlı" notunu gösterir.
+anahtarı içermez, yalnızca `tomtomKeySource: "server"` bilgisini taşır.
 
-Boş bırakılırsa eski davranış sürer: kullanıcı anahtarı arayüzden girer,
-anahtar o tarayıcıda saklanır ve istek URL'sinde görünür (bu durumda TomTom
-panelinden anahtara domain kısıtlaması eklenmesi önerilir).
+Arayüzde anahtar girilecek bir alan **yok** — yalnızca bu şekilde
+tanımlanabilir. Boş bırakılırsa canlı trafik/olay uyarısı özellikleri
+devre dışı kalır, panel OSRM'in statik tahminiyle çalışmaya devam eder.
 
 ## Veritabanı
 

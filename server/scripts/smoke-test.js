@@ -17,6 +17,12 @@ var path = require('path');
 var TMP_DB = path.join(os.tmpdir(), 'tss-smoke-' + Date.now() + '.db');
 process.env.TSS_DB_PATH = TMP_DB;
 process.env.APP_TOKEN = 'smoke-test-token';
+// Geliştiricinin gerçek server/.env dosyasında bir TOMTOM_API_KEY olabilir
+// (bkz. server/tomtom.js resolveKey — .env her zaman öncelikli). require('../index')
+// dotenv'i yükleyip onu process.env'e yazmadan önce burada boşaltıyoruz ki testler
+// "anahtar tanımlı değil" senaryosunu makinedeki gerçek .env'den bağımsız,
+// güvenilir şekilde kurabilsin.
+process.env.TOMTOM_API_KEY = '';
 
 var app = require('../index');
 var store = require('../store');

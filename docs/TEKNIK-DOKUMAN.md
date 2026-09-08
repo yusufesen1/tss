@@ -289,11 +289,13 @@ Alan detayları:
   eklenmiş alan; bir aracın hangi geçmiş seferde kullanıldığını **kimlik**
   üzerinden (plaka değişse bile) izlemeyi sağlar. Bu alan sonradan eklendi —
   eski kayıtlarda olmayabilir, `fleet.js` bu durumda plaka eşleşmesine düşer.
-- **`tomtomApiKey`** — kullanıcının Trafik Ayarları modalından girdiği TomTom
-  Developer Portal anahtarı; `setTomTomApiKey()` ile trim'lenerek saklanır.
-  Diğer alanlarla aynı `localStorage` anahtarına yazılır (bkz. §5.2), koda
-  hiçbir zaman gömülmez. Sadece "En Az Süre" optimizasyon modu seçiliyken
-  kullanılır — bkz. §10.3.
+- **`tomtomApiKey`** — TomTom anahtarı artık **yalnızca** `server/.env` →
+  `TOMTOM_API_KEY` üzerinden tanımlanıyor; Trafik Ayarları modalında kullanıcının
+  anahtar girebileceği bir alan **yok** (kaldırıldı — bkz. §10.3, §12). Bu alan
+  ve `setTomTomApiKey()`/`getTomTomApiKey()` fonksiyonları veri katmanında
+  geriye dönük uyumluluk için duruyor (ör. daha önce içe aktarılmış eski bir
+  `localStorage` yedeğinde bu alan dolu gelebilir), ama arayüzden yeni bir
+  değer yazılamaz. Hem mesafe hem süre modunda kullanılır — bkz. §10.3.
 - **Optimizasyon metriği** (`selCostMetric` — "En Kısa Mesafe" / "En Az
   Süre") **kalıcı değildir**, `state`'in bir parçası değil: `planRoute()`
   çağrısı sırasında DOM'dan okunup doğrudan `Fleet.assignFleet(...)`'e
@@ -1013,14 +1015,20 @@ sadece bir toast uyarısı (`'TomTom canlı trafik verisine ulaşılamadı…'`)
 gösterilir, planlama asla başarısız olmaz. Bu, projenin genel "kısıt
 sağlanamasa da her zaman bir rota üret" felsefesiyle tutarlı.
 
-**Anahtarın yeri — iki mod (§15):**
+**Anahtarın yeri:** yalnızca `server/.env` → `TOMTOM_API_KEY` (bkz. §15).
+Anahtar sunucuda kalır, tarayıcıya **hiç inmez**; istek tarayıcı → kendi
+backend'i → TomTom şeklinde gider. `GET /api/bootstrap` yanıtı bu yüzden
+`tomtomApiKey: ''` + `tomtomKeySource: 'server'` döner. Trafik Ayarları
+modalında kullanıcının anahtar girebileceği bir alan **yok** — kasıtlı
+olarak kaldırıldı, çünkü anahtarı tek elden (`.env`) yönetmek, her
+kurulumda ayrıca tarayıcıya girmekten hem daha güvenli hem daha basit.
 
-| | `server/.env` → `TOMTOM_API_KEY` **dolu** | **Boş** (kullanıcı arayüzden girer) |
-|---|---|---|
-| Anahtarı kim tutar | Kullanıcı, arayüzden girer; o tarayıcının `localStorage`'ı | Sunucu; tarayıcıya **hiç inmez** |
-| İsteği kim atar | Tarayıcı → TomTom (anahtar istek URL'sinde görünür) | Tarayıcı → kendi backend'i → TomTom |
-| `bootstrap` yanıtı | Anahtarı içerir | `tomtomApiKey: ''` + `tomtomKeySource: 'server'` |
-| Arayüzde | Alan doldurulmuş görünür | Alan boş, altında "sunucuda tanımlı" notu |
+> **Tarihsel not:** daha önce anahtar kullanıcı tarafından arayüzden de
+> girilebiliyordu (`localStorage`'da tutulup istek URL'sinde görünürdü —
+> §12'de anlatılan risk buydu). Veri katmanındaki `setTomTomApiKey()` /
+> `getTomTomApiKey()` fonksiyonları ve `tomtomKeySource: 'client'` durumu
+> geriye dönük uyumluluk için kodda duruyor (bkz. §5.1), ama artık hiçbir
+> arayüz elemanı bu yolu tetiklemiyor.
 
 Backend varken proxy ucu: `POST /api/tomtom/route-leg` (gövde:
 `{origin:{lat,lng}, destination:{lat,lng}}`) — dönen şekil `public/js/tomtom.js`'in
@@ -1181,12 +1189,9 @@ tabloyu **canlı** yeniden çizer.
   `POST /api/tomtom/route-leg` proxy'si üzerinden gider ve TomTom çağrısını
   sunucu yapar. Otomatik testte bu doğrulanıyor (yanıtın hiçbir yerinde
   anahtar geçmemeli).
-  Doldurulmazsa eski davranış geçerlidir: anahtar kullanıcı tarafından
-  arayüzden girilir, `localStorage`'da düz metin durur ve her istekte URL
-  query string'inde (Network sekmesinde görünür şekilde) gider — aynı
-  tarayıcıyı paylaşan biri DevTools'tan okuyabilir. Bu modda azaltıcı
-  önlem: TomTom Developer Portal'dan key'e **domain/referrer kısıtlaması**
-  eklemek (bkz. §10.3).
+  Doldurulmazsa TomTom özelliği (canlı trafik/olay uyarısı) devre dışı
+  kalır — arayüzde artık anahtar girilecek bir alan yok (bkz. §10.3),
+  yalnızca `.env` doldurularak açılabilir.
 - **Sunucu tarafı sırların repoya girmemesi:** `server/.env` (hem `APP_TOKEN`
   hem `TOMTOM_API_KEY`) `.gitignore`'da; repoda yalnızca değerleri boş olan
   `server/.env.example` var. Proxy hata mesajlarında da anahtar maskeleniyor

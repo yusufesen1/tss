@@ -400,10 +400,11 @@
     </div>
     <div class="modal-body">
       <p class="hint">
-        Bir TomTom anahtarı tanımlıysa süreler <strong>canlı trafik verisinden</strong>
+        Sunucuda bir TomTom anahtarı tanımlıysa (<code>server/.env</code> →
+        <code>TOMTOM_API_KEY</code>) süreler <strong>canlı trafik verisinden</strong>
         gelir ve aşağıdaki katsayılar kullanılmaz. Buradaki ayarlar yalnızca canlı
-        veriye ulaşılamadığında (anahtar yok, kota dolu, bağlantı hatası) devreye
-        giren yedek tahmindir.
+        veriye ulaşılamadığında (anahtar tanımlı değil, kota dolu, bağlantı hatası)
+        devreye giren yedek tahmindir.
       </p>
       <div class="form-card">
         <label class="check-row">
@@ -447,16 +448,6 @@
           </tr>
         </tbody>
       </table>
-
-      <div class="form-card">
-        <div class="field-group">
-          <label class="label label-sm" for="inpTomTomKey">TomTom API Key</label>
-          <input type="password" id="inpTomTomKey" class="input input-sm" placeholder="TomTom Developer Portal'dan alınan key" autocomplete="off" />
-        </div>
-        <p class="hint" id="tomtomKeyHint" hidden></p>
-        <p class="hint">
-        </p>
-      </div>
 
       <div class="form-card">
         <div class="section-head">

@@ -2317,25 +2317,6 @@
     if (select._tssSync) select._tssSync();
   }
 
-  // Anahtar sunucuda (server/.env) tanımlıysa alan boş görünür — kullanıcı
-  // "girmemişim" sanmasın diye durumu açıkça yazıyoruz. Alan yine de
-  // kullanılabilir kalır: girilen değer bu tarayıcı için geçerli olur ama
-  // sunucudaki anahtar önceliklidir.
-  function renderTomTomKeyHint() {
-    var hint = $('tomtomKeyHint');
-    if (!hint) return;
-    var source = D.getTomTomKeySource ? D.getTomTomKeySource() : 'none';
-    if (source === 'server') {
-      hint.textContent = 'Anahtar sunucuda tanımlı — bu tarayıcıya hiç indirilmiyor, ' +
-        'istekler sunucu üzerinden yapılıyor. Buraya bir şey girmenize gerek yok.';
-      hint.hidden = false;
-      $('inpTomTomKey').placeholder = 'Sunucuda tanımlı';
-    } else {
-      hint.hidden = true;
-      $('inpTomTomKey').placeholder = "TomTom Developer Portal'dan alınan key";
-    }
-  }
-
   function renderTrafficSettings() {
     var t = D.getTrafficSettings();
     $('trafficEnabled').checked = !!t.enabled;
@@ -2349,8 +2330,6 @@
     $('trafficNightStart').value = t.night.start;
     $('trafficNightEnd').value = t.night.end;
     $('trafficNightFactor').value = t.night.factor;
-    $('inpTomTomKey').value = D.getTomTomApiKey();
-    renderTomTomKeyHint();
 
     var fuel = D.getFuelPriceSettings();
     $('inpFuelDizel').value = fuel.dizelPrice != null ? fuel.dizelPrice : '';
@@ -2528,11 +2507,6 @@
     bindTrafficField('trafficNightStart', 'night', 'start');
     bindTrafficField('trafficNightEnd', 'night', 'end');
     bindTrafficField('trafficNightFactor', 'night', 'factor');
-    // TomTom key, trafik katsayısı ayarlarından ayrı bir alan (js/data.js →
-    // tomtomApiKey) — bindTrafficField ile karışmasın diye ayrı bağlanıyor.
-    $('inpTomTomKey').addEventListener('change', function () {
-      D.setTomTomApiKey($('inpTomTomKey').value);
-    });
 
     // Sunucu erişim anahtarı (yalnızca backend'li kullanımda görünür)
     $('btnSaveAppToken').addEventListener('click', function () {
