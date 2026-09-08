@@ -1929,14 +1929,6 @@
     list.className = 'doc-list';
     VEHICLE_DOCS.forEach(function (doc) { list.appendChild(buildDocRow(veh, doc)); });
     body.appendChild(list);
-
-    var note = document.createElement('p');
-    note.className = 'hint doc-note';
-    note.textContent = 'Bu bilgiler otomatik sorgulanamıyor — e-Devlet ve TÜVTÜRK ' +
-      'sorguları kişisel kimlik doğrulaması istiyor, filo için halka açık bir API yok. ' +
-      'Tarihleri elle girin; panel kalan süreyi hesaplar ve ' + DOC_WARN_DAYS +
-      ' günden az kalınca uyarır.';
-    body.appendChild(note);
   }
 
   function buildInfoField(label, id, type, value, hint) {
@@ -2012,6 +2004,10 @@
       var isEditing = veh.id === editingVehicleId;
 
       if (isEditing) {
+        // İkon sütunuyla hücre sayısını normal satırla eşit tutmak için
+        // (colgroup sabit 8 sütun tanımlıyor, bkz. index.html).
+        tr.appendChild(document.createElement('td'));
+
         var tdPlate = document.createElement('td');
         var inpPlate = document.createElement('input');
         inpPlate.type = 'text';
@@ -2115,11 +2111,13 @@
         return;
       }
 
-      // Plaka hücresi: solda belge/geçerlilik bilgisini açan "i" butonu.
-      // Bir belge süresi geçmişse buton uyarı rengine döner — kullanıcı
-      // tabloya bakınca hangi araçta sorun olduğunu açmadan görür.
-      var tdPlate = document.createElement('td');
-      tdPlate.className = 'cell-name plate-cell';
+      // Belge/geçerlilik bilgisini açan "i" butonu — kendi dar sütununda,
+      // Plaka hücresinin İÇİNDE değil: aksi halde plaka metni "Plaka"
+      // başlığının altından kayıyor (bkz. colgroup, index.html). Bir belge
+      // süresi geçmişse buton uyarı rengine döner — kullanıcı tabloya
+      // bakınca hangi araçta sorun olduğunu modalı açmadan görür.
+      var tdInfo = document.createElement('td');
+      tdInfo.className = 'center';
       var docState = vehicleDocumentState(veh);
       var btnInfo = document.createElement('button');
       btnInfo.type = 'button';
@@ -2128,10 +2126,12 @@
       btnInfo.title = docState.summary;
       btnInfo.setAttribute('aria-label', escapeHtml(veh.plate) + ' — araç bilgileri');
       btnInfo.addEventListener('click', function () { openVehicleInfo(veh.id); });
-      tdPlate.appendChild(btnInfo);
-      var plateText = document.createElement('span');
-      plateText.textContent = veh.plate;
-      tdPlate.appendChild(plateText);
+      tdInfo.appendChild(btnInfo);
+      tr.appendChild(tdInfo);
+
+      var tdPlate = document.createElement('td');
+      tdPlate.className = 'cell-name';
+      tdPlate.textContent = veh.plate;
       tr.appendChild(tdPlate);
 
       var tdModel = document.createElement('td');

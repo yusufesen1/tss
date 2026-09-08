@@ -906,10 +906,7 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
    Renkler tasarım sisteminden: geçerli -> forest/mint,
    sorun -> marka kirmizisi (paletde ayri bir uyari rengi yok).
    ========================================================= */
-.plate-cell{ display: flex; align-items: center; gap: 8px; }
-
 .btn-info{
-  flex: 0 0 auto;
   width: 20px;
   height: 20px;
   border-radius: var(--r-pill);
@@ -969,8 +966,6 @@ input.input[type="number"]{ -moz-appearance: textfield; appearance: textfield; }
 .doc-ok{ background: var(--brand-mint); color: var(--brand-forest); }
 .doc-soon{ background: var(--tss-kirmizi-10); color: var(--brand-red-dark); }
 .doc-expired{ background: var(--brand-red); color: var(--n-0); }
-
-.doc-note{ margin-top: 14px; }
 
 @media (max-width: 620px){
   .doc-row{ grid-template-columns: 1fr; }
